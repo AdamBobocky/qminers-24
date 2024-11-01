@@ -48,24 +48,3 @@ else:
 # Step 8: Autocorrelation plot to check for patterns in residuals
 sm.graphics.tsa.plot_acf(residuals, lags=40)
 plt.show()
-
-# Step 9: Ljung-Box Test for randomness/autocorrelation (if p > 0.05, no significant autocorrelation)
-ljung_box_result = acorr_ljungbox(residuals, lags=[10], return_df=True)
-print("Ljung-Box Test p-value:", ljung_box_result['lb_pvalue'].values)
-
-# Step 10: (Optional) CUSUM Test for structural breaks (change point detection)
-def cusum_test(residuals, threshold=0.05):
-    S_t = np.cumsum(residuals - np.mean(residuals))
-    t_values = np.arange(len(residuals))
-    plt.figure(figsize=(10, 6))
-    plt.plot(t_values, S_t, label='CUSUM')
-    plt.axhline(threshold, color='red', linestyle='--', label='Threshold')
-    plt.axhline(-threshold, color='red', linestyle='--')
-    plt.title('CUSUM Test for Structural Breaks')
-    plt.legend()
-    plt.show()
-
-cusum_test(residuals)
-
-# Additional Exploratory Steps:
-# Step 11: Plot residuals on rolling windows for rolling analysis (optional)
