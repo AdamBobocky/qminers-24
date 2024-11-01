@@ -10,4 +10,3 @@ class Model:
         bets[np.arange(N), np.random.choice([0, 1])] = min_bet
         bets = pd.DataFrame(data=bets, columns=["BetH", "BetA"], index=opps.index)
         return bets
-    
