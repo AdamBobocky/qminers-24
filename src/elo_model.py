@@ -1,6 +1,7 @@
 import math
 import numpy as np
 import pandas as pd
+from scipy.stats import pearsonr
 
 # K_FACTOR = 0.001 # 0.24590543770344414
 # K_FACTOR = 0.002 # 0.24343762575708858
@@ -85,16 +86,22 @@ class Model:
     def end(self):
         merge = pd.concat(self.games_data)
 
+        me_market_corr = pearsonr([x['elo_pred'] for x in self.predictions], [x['odds_pred'] for x in self.predictions])[0]
+        print('me_market_corr', me_market_corr)
+
         backtests = {
             'pnl_0%': 0,
             'bets_0%': 0,
             'vig_0%': 0,
+            'odds_0%': 0,
             'pnl_10%': 0,
             'bets_10%': 0,
             'vig_10%': 0,
+            'odds_10%': 0,
             'pnl_20%': 0,
             'bets_20%': 0,
-            'vig_20%': 0
+            'vig_20%': 0,
+            'odds_20%': 0
         }
 
         for current in self.predictions:
@@ -111,12 +118,14 @@ class Model:
 
                 if elo_pred * home_odds > 1:
                     backtests['pnl_0%'] -= 1
+                    backtests['odds_0%'] += home_odds
                     if home_win:
                         backtests['pnl_0%'] += home_odds
                     backtests['vig_0%'] += 1 / home_odds + 1 / away_odds - 1
                     backtests['bets_0%'] += 1
                 if (1 - elo_pred) * away_odds > 1:
                     backtests['pnl_0%'] -= 1
+                    backtests['odds_0%'] += away_odds
                     if away_win:
                         backtests['pnl_0%'] += away_odds
                     backtests['vig_0%'] += 1 / home_odds + 1 / away_odds - 1
@@ -124,12 +133,14 @@ class Model:
 
                 if elo_pred * home_odds > 1.1:
                     backtests['pnl_10%'] -= 1
+                    backtests['odds_10%'] += home_odds
                     if home_win:
                         backtests['pnl_10%'] += home_odds
                     backtests['vig_10%'] += 1 / home_odds + 1 / away_odds - 1
                     backtests['bets_10%'] += 1
                 if (1 - elo_pred) * away_odds > 1.1:
                     backtests['pnl_10%'] -= 1
+                    backtests['odds_10%'] += away_odds
                     if away_win:
                         backtests['pnl_10%'] += away_odds
                     backtests['vig_10%'] += 1 / home_odds + 1 / away_odds - 1
@@ -137,12 +148,14 @@ class Model:
 
                 if elo_pred * home_odds > 1.2:
                     backtests['pnl_20%'] -= 1
+                    backtests['odds_20%'] += home_odds
                     if home_win:
                         backtests['pnl_20%'] += home_odds
                     backtests['vig_20%'] += 1 / home_odds + 1 / away_odds - 1
                     backtests['bets_20%'] += 1
                 if (1 - elo_pred) * away_odds > 1.2:
                     backtests['pnl_20%'] -= 1
+                    backtests['odds_20%'] += away_odds
                     if away_win:
                         backtests['pnl_20%'] += away_odds
                     backtests['vig_20%'] += 1 / home_odds + 1 / away_odds - 1
