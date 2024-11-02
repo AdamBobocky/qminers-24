@@ -29,3 +29,20 @@ Frequencies based on occurrences:
 20: 0.0000
 21: 0.0000
 ```
+
+And below is a table of frequencies of how many teams a player has been on:
+I.e. "2: 0.2151" means that 21.51% of players have been on exactly 2 different teams.
+```
+1: 0.3481
+2: 0.2151
+3: 0.1377
+4: 0.1236
+5: 0.0790
+6: 0.0499
+7: 0.0239
+8: 0.0109
+9: 0.0078
+10: 0.0021
+11: 0.0005
+12: 0.0016
+```
