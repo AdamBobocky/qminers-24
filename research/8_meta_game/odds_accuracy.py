@@ -5,7 +5,8 @@ import math
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from sklearn.metrics import mean_squared_error, r2_score
+from scipy.stats import pearsonr
+from sklearn.metrics import mean_squared_error
 
 file_path = 'data/games.csv'
 df = pd.read_csv(file_path)
@@ -18,6 +19,8 @@ def inverse_sigmoid(x):
 
 season_skill_map = {}
 
+HOME_FACTOR = 1
+
 predictions = []
 pnl = 0
 cum_odds = 0
@@ -27,6 +30,7 @@ bets = 0
 for i in df.index:
   current = df.loc[i]
 
+  neutral = current['N']
   season = current['Season']
   home_id = current['HID']
   away_id = current['AID']
@@ -49,7 +53,7 @@ for i in df.index:
   if len(season_skill_map[season][home_id]) >= 30 and len(season_skill_map[season][away_id]) >= 30:
     avg_skill_home = sum(season_skill_map[season][home_id]) / len(season_skill_map[season][home_id])
     avg_skill_away = sum(season_skill_map[season][away_id]) / len(season_skill_map[season][away_id])
-    my_pred = sigmoid(avg_skill_home - avg_skill_away)
+    my_pred = sigmoid(avg_skill_home - avg_skill_away * (1 - neutral) * HOME_FACTOR)
     odds_pred = 1 / home_odds / overround
 
     predictions.append([my_pred, odds_pred, home_win])
@@ -69,8 +73,8 @@ for i in df.index:
       overround_paid += overround - 1
       bets += 1
 
-  season_skill_map[season][home_id].append(home_exp)
-  season_skill_map[season][away_id].append(away_exp)
+  season_skill_map[season][home_id].append(home_exp - HOME_FACTOR / 2)
+  season_skill_map[season][away_id].append(away_exp + HOME_FACTOR / 2)
 
 print(len(predictions))
 
@@ -82,12 +86,22 @@ my_predictions = predictions_array[:, 0]
 market_predictions = predictions_array[:, 1]
 outcomes = predictions_array[:, 2]
 
+my_confidence = np.absolute(my_predictions - 0.5).mean()
+market_confidence = np.absolute(market_predictions - 0.5).mean()
+
+my_theo_mse = ((my_predictions ** 2) * (1 - my_predictions) + ((1 - my_predictions) ** 2) * my_predictions).mean()
+market_theo_mse = ((market_confidence ** 2) * (1 - market_confidence) + ((1 - market_confidence) ** 2) * market_confidence).mean()
+
+print('my_confidence', my_confidence)
+print('market_confidence', market_confidence)
+print('my_theo_mse', my_theo_mse)
+print('market_theo_mse', market_theo_mse)
+
 # Calculate mean squared error
 mse_my = mean_squared_error(outcomes, my_predictions)
 mse_market = mean_squared_error(outcomes, market_predictions)
 
-# Calculate R2 score
-r2_me_market = r2_score(my_predictions, market_predictions)
+me_market_corr = pearsonr(my_predictions, market_predictions)[0]
 
 # Calculate differences for histogram
 differences = my_predictions - market_predictions
@@ -98,11 +112,11 @@ fig.add_trace(go.Histogram(x=differences, nbinsx=10, name='Differences'))
 fig.update_layout(title='Histogram of Differences Between My and Market Predictions',
                   xaxis_title='Difference (My - Market)',
                   yaxis_title='Count')
-fig.show()
+# fig.show()
 
 # Output results
 print('mse_my', mse_my)
 print('mse_market', mse_market)
-print('r2_me_market', r2_me_market)
+print('me_market_corr', me_market_corr)
 print('avg_odds', cum_odds / bets)
 print('avg_pnl', pnl / bets, 'avg_overround', overround_paid / bets, 'bets', bets)

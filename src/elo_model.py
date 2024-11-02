@@ -14,7 +14,12 @@ import pandas as pd
 # K_FACTOR = 0.05 # 0.22050392804637897
 # K_FACTOR = 0.06 # 0.21945808153867052
 # K_FACTOR = 0.07 # 0.2187450392260056
-K_FACTOR = 0.1 # 0.21776958536336236
+K_FACTOR = 0.15 # 0.21776958536336236
+# HOME_FACTOR = 0.0 # 0.21778113727211543; pnl_0%: -4492.2694777849960
+# HOME_FACTOR = 0.2 # 0.20918990376524077; pnl_0%: -4166.7620255410050
+# HOME_FACTOR = 0.4 # 0.20448808763098890; pnl_0%: -3479.0613594956717
+HOME_FACTOR = 0.6 # 0.20342902131367355; pnl_0%: -2515.0896918166277
+# HOME_FACTOR = 0.8 # 0.20548842732293512; pnl_0%: -2285.454796889633
 
 class Model:
     elo_map = {}
@@ -29,6 +34,7 @@ class Model:
     def place_bets(self, summary: pd.DataFrame, opps: pd.DataFrame, inc: tuple[pd.DataFrame, pd.DataFrame]):
         games_increment, players_increment = inc
         print(summary['Date'])
+        # print(players_increment)
         # print(opps) # Contains betting opportunities
         # print(games_increment) # New games data
         # print(players_increment) # New players data
@@ -41,12 +47,13 @@ class Model:
             home_id = current['HID']
             away_id = current['AID']
             home_win = current['H']
+            neutral = current['N']
 
             for current_id in [home_id, away_id]:
                 if current_id not in self.elo_map:
                     self.elo_map[current_id] = 0
 
-            prediction = sigmoid(self.elo_map[home_id] - self.elo_map[away_id])
+            prediction = sigmoid(self.elo_map[home_id] - self.elo_map[away_id] + (1 - neutral) * HOME_FACTOR)
 
             self.elo_map[home_id] += K_FACTOR * (home_win - prediction)
             self.elo_map[away_id] += K_FACTOR * ((1 - home_win) - (1 - prediction))
@@ -58,12 +65,13 @@ class Model:
             away_id = current['AID']
             home_odds = current['OddsH']
             away_odds = current['OddsA']
+            neutral = current['N']
 
             for current_id in [home_id, away_id]:
                 if current_id not in self.elo_map:
                     self.elo_map[current_id] = 0
 
-            prediction = sigmoid(self.elo_map[home_id] - self.elo_map[away_id])
+            prediction = sigmoid(self.elo_map[home_id] - self.elo_map[away_id] + (1 - neutral) * HOME_FACTOR)
             odds_prediction = 1 / home_odds / (1 / home_odds + 1 / away_odds)
 
             self.predictions.append({
