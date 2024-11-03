@@ -16,6 +16,12 @@ def sigmoid(x):
 indices = np.load('temp/np_indices.npy')
 X = np.load('temp/np_frames_X.npy')
 y = np.load('temp/np_frames_y.npy')
+game_y = np.load('temp/np_game_y.npy')
+
+print('indices', indices.shape)
+print('X', X.shape)
+print('y', y.shape)
+print('game_y', game_y.shape)
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, shuffle=False)
 
@@ -33,6 +39,7 @@ mse = mean_squared_error(y_test, y_pred)
 print(f"Mean Squared Error: {mse}")
 
 relevant_indices = indices[-len(y_test):]
+relevant_outcomes = game_y[-len(y_test):]
 
 src_df = []
 
@@ -41,15 +48,16 @@ for i in range(len(y_test)):
     'GameId': relevant_indices[i][0],
     'Home': relevant_indices[i][1],
     'Pred': y_pred[i],
-    'Target': y_test[i]
+    'Target': y_test[i],
+    'Outcome': relevant_outcomes[i]
   })
 
 df = pd.DataFrame(src_df)
 
 grouped = df.groupby('GameId')
 
-MULTIPLIER = 4
-SIGMOID_MULTIPLIER = 0.6
+MULTIPLIER = 1.4
+SIGMOID_MULTIPLIER = 0.175
 
 prediction_map = {}
 
@@ -66,15 +74,15 @@ for group_name, group_df in grouped:
 
   home_pred = home_filter['Pred'].mean()
   away_pred = away_filter['Pred'].mean()
-  target = home_filter['Target'].mean()
+  outcome = home_filter['Outcome'].mean()
 
   pred = home_pred - away_pred
-  home_win = target > 0
+  home_win = outcome > 0
 
   pred_prob = sigmoid(pred * SIGMOID_MULTIPLIER)
 
   match_mse += (pred_prob - home_win) ** 2
-  mse += (pred * MULTIPLIER - target) ** 2
+  mse += (pred * MULTIPLIER - outcome) ** 2
   n += 1
 
   prediction_map[group_name] = pred_prob

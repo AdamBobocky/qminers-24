@@ -16,6 +16,7 @@ player_stats_average = {} # Dict where first index is [season] and second is [pl
 indices = []
 frames_X = []
 frames_y = []
+game_y = []
 
 total = len(players_df)
 
@@ -40,16 +41,18 @@ for i in players_df.index:
   player_is_home_team = home_id == team_id
 
   player_score_delta = (home_score - away_score) if player_is_home_team else (away_score - home_score)
+  player_team_score = home_score if player_is_home_team else away_score
 
   if len(player_stats_average[season][player_id]) >= 24:
     # print(player_stats_average[season][player_id])
     df = pd.DataFrame(player_stats_average[season][player_id])
     inputs = df[['MIN', 'FGM', 'FGA', 'FG3M', 'FG3A', 'FTM', 'FTA', 'ORB', 'DRB', 'RB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS']].mean().to_numpy()
-    target = player_score_delta
+    target = current['PTS']
 
     indices.append([game_id, player_is_home_team])
     frames_X.append(inputs)
     frames_y.append(target)
+    game_y.append(player_score_delta)
 
   # Add this game stats to the player
   player_stats_average[season][player_id].append(current)
@@ -61,9 +64,11 @@ for i in players_df.index:
 np_indices = np.array(indices)
 np_frames_X = np.array(frames_X)
 np_frames_y = np.array(frames_y)
+np_game_y = np.array(game_y)
 
 np.save('temp/np_indices.npy', np_indices)
 np.save('temp/np_frames_X.npy', np_frames_X)
 np.save('temp/np_frames_y.npy', np_frames_y)
+np.save('temp/np_game_y.npy', np_game_y)
 
 print(len(frames_X))

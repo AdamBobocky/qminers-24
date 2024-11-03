@@ -3,6 +3,7 @@ import math
 import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
+from sklearn.linear_model import LogisticRegression
 
 K_FACTOR = 0.15
 HOME_FACTOR = 0.5
@@ -10,22 +11,13 @@ HOME_FACTOR = 0.5
 with open('temp/xgboost_prediction_map.json', 'r') as json_file:
     xgboost_prediction_map = json.load(json_file)
 
-# 0.15 0.60 | 0.9738798138290375
-# 0.15 0.66 | 0.9733689204312758
-# 0.15 0.55 | 0.9742172089361875
-# 0.15 0.50 | 0.9743825435301248
-# 0.15 0.45 | 0.9743774694686267
-
-# 0.125 0.50 | 0.9713357989894221
-# 0.150 0.50 | 0.9743825435301248
-# 0.175 0.50 | 0.9743161719057218
-
 class Model:
     elo_map = {}
     games_data = []
     predictions = []
     metrics = {
         'ensamble_mse': 0,
+        'lr_mse': 0,
         'elo_mse': 0,
         'odds_mse': 0,
         'n': 0
@@ -85,9 +77,6 @@ class Model:
     def end(self):
         merge = pd.concat(self.games_data)
 
-        # me_market_corr = pearsonr([x['elo_pred'] for x in self.predictions], [x['odds_pred'] for x in self.predictions])[0]
-        # print('me_market_corr', me_market_corr)
-
         backtests = {
             'pnl_0%': 0,
             'bets_0%': 0,
@@ -103,8 +92,11 @@ class Model:
             'odds_20%': 0
         }
 
+        factorA = []
+        factorB = []
+        target = []
+
         for current in self.predictions:
-            print(current['index'])
             if str(current['index']) in xgboost_prediction_map and current['index'] in merge.index:
                 xg_pred = xgboost_prediction_map[str(current['index'])]
 
@@ -115,84 +107,81 @@ class Model:
                 home_odds = current['home_odds']
                 away_odds = current['away_odds']
 
-                ensamble_pred = sigmoid(inverse_sigmoid(xg_pred) * 0.3 + inverse_sigmoid(elo_pred) * 0.9)
+                ensamble_pred = sigmoid(0.09445932 + inverse_sigmoid(xg_pred) * 0.75088559 + inverse_sigmoid(elo_pred) * 0.88550342)
+
+                factorA.append(inverse_sigmoid(xg_pred))
+                factorB.append(inverse_sigmoid(elo_pred))
+                target.append(home_win)
 
                 self.metrics['ensamble_mse'] += (ensamble_pred - home_win) ** 2
                 self.metrics['elo_mse'] += (elo_pred - home_win) ** 2
                 self.metrics['odds_mse'] += (odds_pred - home_win) ** 2
                 self.metrics['n'] += 1
 
-                if xg_pred * home_odds > 1:
+                if ensamble_pred * home_odds > 1:
                     backtests['pnl_0%'] -= 1
                     backtests['odds_0%'] += home_odds
                     if home_win:
                         backtests['pnl_0%'] += home_odds
                     backtests['vig_0%'] += 1 / home_odds + 1 / away_odds - 1
                     backtests['bets_0%'] += 1
-                if (1 - xg_pred) * away_odds > 1:
+                if (1 - ensamble_pred) * away_odds > 1:
                     backtests['pnl_0%'] -= 1
                     backtests['odds_0%'] += away_odds
                     if away_win:
                         backtests['pnl_0%'] += away_odds
                     backtests['vig_0%'] += 1 / home_odds + 1 / away_odds - 1
                     backtests['bets_0%'] += 1
+                #
+                if ensamble_pred * home_odds > 1.1:
+                    backtests['pnl_10%'] -= 1
+                    backtests['odds_10%'] += home_odds
+                    if home_win:
+                        backtests['pnl_10%'] += home_odds
+                    backtests['vig_10%'] += 1 / home_odds + 1 / away_odds - 1
+                    backtests['bets_10%'] += 1
+                if (1 - ensamble_pred) * away_odds > 1.1:
+                    backtests['pnl_10%'] -= 1
+                    backtests['odds_10%'] += away_odds
+                    if away_win:
+                        backtests['pnl_10%'] += away_odds
+                    backtests['vig_10%'] += 1 / home_odds + 1 / away_odds - 1
+                    backtests['bets_10%'] += 1
+                #
+                if ensamble_pred * home_odds > 1.2:
+                    backtests['pnl_20%'] -= 1
+                    backtests['odds_20%'] += home_odds
+                    if home_win:
+                        backtests['pnl_20%'] += home_odds
+                    backtests['vig_20%'] += 1 / home_odds + 1 / away_odds - 1
+                    backtests['bets_20%'] += 1
+                if (1 - ensamble_pred) * away_odds > 1.2:
+                    backtests['pnl_20%'] -= 1
+                    backtests['odds_20%'] += away_odds
+                    if away_win:
+                        backtests['pnl_20%'] += away_odds
+                    backtests['vig_20%'] += 1 / home_odds + 1 / away_odds - 1
+                    backtests['bets_20%'] += 1
 
-            # if current['index'] in merge.index:
-            #     home_win = merge.at[current['index'], 'H']
-            #     away_win = merge.at[current['index'], 'A']
-            #     elo_pred = current['elo_pred']
-            #     odds_pred = current['odds_pred']
-            #     home_odds = current['home_odds']
-            #     away_odds = current['away_odds']
-            #     self.metrics['elo_mse'] += (elo_pred - home_win) ** 2
-            #     self.metrics['odds_mse'] += (odds_pred - home_win) ** 2
-            #     self.metrics['n'] += 1
+        X = np.column_stack((factorA, factorB))
+        y = np.array(target)
 
-            #     if elo_pred * home_odds > 1:
-            #         backtests['pnl_0%'] -= 1
-            #         backtests['odds_0%'] += home_odds
-            #         if home_win:
-            #             backtests['pnl_0%'] += home_odds
-            #         backtests['vig_0%'] += 1 / home_odds + 1 / away_odds - 1
-            #         backtests['bets_0%'] += 1
-            #     if (1 - elo_pred) * away_odds > 1:
-            #         backtests['pnl_0%'] -= 1
-            #         backtests['odds_0%'] += away_odds
-            #         if away_win:
-            #             backtests['pnl_0%'] += away_odds
-            #         backtests['vig_0%'] += 1 / home_odds + 1 / away_odds - 1
-            #         backtests['bets_0%'] += 1
+        model = LogisticRegression()
+        model.fit(X, y)
+        y_pred = model.predict_proba(X)[:, 1]
 
-            #     if elo_pred * home_odds > 1.1:
-            #         backtests['pnl_10%'] -= 1
-            #         backtests['odds_10%'] += home_odds
-            #         if home_win:
-            #             backtests['pnl_10%'] += home_odds
-            #         backtests['vig_10%'] += 1 / home_odds + 1 / away_odds - 1
-            #         backtests['bets_10%'] += 1
-            #     if (1 - elo_pred) * away_odds > 1.1:
-            #         backtests['pnl_10%'] -= 1
-            #         backtests['odds_10%'] += away_odds
-            #         if away_win:
-            #             backtests['pnl_10%'] += away_odds
-            #         backtests['vig_10%'] += 1 / home_odds + 1 / away_odds - 1
-            #         backtests['bets_10%'] += 1
+        print(model)
+        print('Model Parameters:')
+        print(model.get_params())
+        print('Model Coefficients:')
+        print(model.coef_)
+        print('Model Intercept:')
+        print(model.intercept_)
 
-            #     if elo_pred * home_odds > 1.2:
-            #         backtests['pnl_20%'] -= 1
-            #         backtests['odds_20%'] += home_odds
-            #         if home_win:
-            #             backtests['pnl_20%'] += home_odds
-            #         backtests['vig_20%'] += 1 / home_odds + 1 / away_odds - 1
-            #         backtests['bets_20%'] += 1
-            #     if (1 - elo_pred) * away_odds > 1.2:
-            #         backtests['pnl_20%'] -= 1
-            #         backtests['odds_20%'] += away_odds
-            #         if away_win:
-            #             backtests['pnl_20%'] += away_odds
-            #         backtests['vig_20%'] += 1 / home_odds + 1 / away_odds - 1
-            #         backtests['bets_20%'] += 1
+        for j in range(len(target)):
+            self.metrics['lr_mse'] += (y_pred[j] - target[j]) ** 2
 
+        print('lr_mse:', self.metrics['lr_mse'] / self.metrics['n'])
         print('ensamble_mse:', self.metrics['ensamble_mse'] / self.metrics['n'])
         print('elo_mse:', self.metrics['elo_mse'] / self.metrics['n'])
         print('odds_mse:', self.metrics['odds_mse'] / self.metrics['n'])
