@@ -12,11 +12,16 @@ def sigmoid(x):
 
 class Model:
     def __init__(self):
+        self.team_stats_average = {}
         self.player_stats_average = {}
         self.team_players = {}
 
+        self.fourfactor_prediction_map = {}
+        self.xgb_prediction_map = {}
         self.prediction_map = {}
-        self.predictions = []
+        self.corr_me = []
+        self.corr_mkt = []
+        self.ensamble_training_frames = []
         self.games_memory = {}
         self.indices = []
         self.frames_X = []
@@ -27,6 +32,13 @@ class Model:
         self.retrain_countdown = 80000
         self.lr_retrain_countdown = 0
 
+        self.metrics = {
+            'my_mse': 0,
+            'mkt_mse': 0,
+            'n': 0
+        }
+
+        self.bet_opps = 0
         self.bet_volume = 0
         self.bet_count = 0
         self.bet_sum_odds = 0
@@ -38,7 +50,7 @@ class Model:
 
         if self.bet_count > 0:
             print()
-            print('Bets:', self.bet_count, 'Volume:', self.bet_volume, 'Avg odds:', self.bet_sum_odds / self.bet_count)
+            print('Opps:', self.bet_opps, 'Bets:', self.bet_count, 'Volume:', self.bet_volume, 'Avg odds:', self.bet_sum_odds / self.bet_count)
 
         self.process_games_increment(games_increment, players_increment)
 
@@ -51,26 +63,39 @@ class Model:
         if self.xg_reg != False:
             for i in opps.index:
                 current = opps.loc[i]
+
+                self.bet_opps += 1
+
                 if current['Date'] == summary.iloc[0]['Date']:
-                    my_pred = self.predict(i, current['Season'], current['HID'], current['AID'], current['N'])
+                    my_pred = self.predict(i, current['Season'], current['HID'], current['AID'])
 
                     if my_pred != -1:
                         odds_home = current['OddsH']
                         odds_away = current['OddsA']
 
-                        if my_pred * odds_home > 1.08 and odds_home < 5:
+                        if my_pred * odds_home > 1.1 and odds_home < 5:
                             bets.at[i, 'BetH'] = min_bet
 
                             self.bet_volume += min_bet
                             self.bet_count += 1
                             self.bet_sum_odds += odds_home
 
-                        if (1 - my_pred) * odds_away > 1.08 and odds_away < 5:
+                        if (1 - my_pred) * odds_away > 1.1 and odds_away < 5:
                             bets.at[i, 'BetA'] = min_bet
 
                             self.bet_volume += min_bet
                             self.bet_count += 1
                             self.bet_sum_odds += odds_away
+
+        if self.metrics['n'] > 0:
+            r = np.corrcoef(self.corr_me, self.corr_mkt)[0, 1]
+            r_squared = r ** 2
+
+            print('')
+            print('my_mse   ', self.metrics['my_mse'] / self.metrics['n'], self.metrics['n'])
+            print('mkt_mse  ', self.metrics['mkt_mse'] / self.metrics['n'], self.metrics['n'])
+            print('corr r   ', r)
+            print('corr r2  ', r_squared)
 
         return bets
 
@@ -78,20 +103,50 @@ class Model:
         for i in games_increment.index:
             current = games_increment.loc[i]
 
+            season = current['Season']
             home_id = current['HID']
             away_id = current['AID']
             home_win = current['H']
-            neutral = current['N']
             odds_home = current['OddsH']
             odds_away = current['OddsA']
             overround = 1 / odds_home + 1 / odds_away
-            odds_pred = 1 / odds_home / overround
+            mkt_pred = 1 / odds_home / overround
 
             self.games_memory[i] = {
                 'home_id': current['HID'],
                 'home_score': current['HSC'],
                 'away_score': current['ASC']
             }
+
+            if season not in self.team_stats_average:
+                self.team_stats_average[season] = {}
+            for team_id in [home_id, away_id]:
+                if team_id not in self.team_stats_average[season]:
+                    self.team_stats_average[season][team_id] = {
+                        'FieldGoalsMade': 0,
+                        '3PFieldGoalsMade': 0,
+                        'FieldGoalAttempts': 0,
+                        'Turnovers': 0,
+                        'OffensiveRebounds': 0,
+                        'OpponentsDefensiveRebounds': 0,
+                        'FreeThrowAttempts': 0
+                    }
+
+            self.team_stats_average[season][home_id]['FieldGoalsMade'] += current['HFGM']
+            self.team_stats_average[season][home_id]['3PFieldGoalsMade'] += current['HFG3M']
+            self.team_stats_average[season][home_id]['FieldGoalAttempts'] += current['HFGA']
+            self.team_stats_average[season][home_id]['Turnovers'] += current['HTOV']
+            self.team_stats_average[season][home_id]['OffensiveRebounds'] += current['HORB']
+            self.team_stats_average[season][home_id]['OpponentsDefensiveRebounds'] += current['ADRB']
+            self.team_stats_average[season][home_id]['FreeThrowAttempts'] += current['HFTA']
+
+            self.team_stats_average[season][away_id]['FieldGoalsMade'] += current['AFGM']
+            self.team_stats_average[season][away_id]['3PFieldGoalsMade'] += current['AFG3M']
+            self.team_stats_average[season][away_id]['FieldGoalAttempts'] += current['AFGA']
+            self.team_stats_average[season][away_id]['Turnovers'] += current['ATOV']
+            self.team_stats_average[season][away_id]['OffensiveRebounds'] += current['AORB']
+            self.team_stats_average[season][away_id]['OpponentsDefensiveRebounds'] += current['ADRB']
+            self.team_stats_average[season][away_id]['FreeThrowAttempts'] += current['AFTA']
 
             home_players = players_increment[(players_increment['Game'] == i) & (players_increment['Team'] == current['HID'])]
             away_players = players_increment[(players_increment['Game'] == i) & (players_increment['Team'] == current['AID'])]
@@ -100,11 +155,21 @@ class Model:
                 if current_id not in self.elo_map:
                     self.elo_map[current_id] = 0
 
-            elo_prediction = sigmoid(self.elo_map[home_id] - self.elo_map[away_id] + (1 - neutral) * HOME_FACTOR)
+            elo_factor = self.elo_map[home_id] - self.elo_map[away_id] + HOME_FACTOR
+            elo_prediction = sigmoid(elo_factor)
+
+            if i in self.xgb_prediction_map:
+                xgb_factor = self.xgb_prediction_map[i]
+                four_factor = self.get_team_four_factor(season, home_id) - self.get_team_four_factor(season, away_id)
+                self.ensamble_training_frames.append([xgb_factor, elo_factor, four_factor, home_win])
 
             if i in self.prediction_map:
-                # self.predictions.append([self.prediction_map[i], current['HSC'] - current['ASC']])
-                self.predictions.append([self.prediction_map[i], elo_prediction, neutral, home_win, odds_pred])
+                self.metrics['my_mse'] += (self.prediction_map[i] - home_win) ** 2
+                self.metrics['mkt_mse'] += (mkt_pred - home_win) ** 2
+                self.metrics['n'] += 1
+
+                self.corr_me.append(self.prediction_map[i])
+                self.corr_mkt.append(mkt_pred)
 
             self.team_players[current['HID']] = home_players['Player'].tolist()
             self.team_players[current['AID']] = away_players['Player'].tolist()
@@ -160,22 +225,57 @@ class Model:
             # Add this game stats to the player
             self.player_stats_average[season][player_id].append(current)
 
+    def fit_ensamble(self):
+        np_data = np.array(self.ensamble_training_frames)[-2000:]
+        X = np_data[:, :3]
+        y = np_data[:, 3]
+
+        self.lr = LogisticRegression()
+        self.lr.fit(X, y)
+
+        print('')
+        print('coefficients:', self.lr.coef_)
+        print('coefficients:', self.lr.coef_)
+        print('coefficients:', self.lr.coef_)
+
     def fit_xgboost(self):
         self.xg_reg = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=100, learning_rate=0.1)
 
         self.xg_reg.fit(np.array(self.frames_X)[-100000:], np.array(self.frames_y)[-100000:])
 
-    def predict(self, id, season, hid, aid, n):
+    def get_team_four_factor(self, season, team_id):
+        if season not in self.team_stats_average:
+            return 0
+
+        if team_id not in self.team_stats_average[season]:
+            return 0
+
+        stats = self.team_stats_average[season][team_id]
+
+        four_factor = 0
+
+        # Effective Field Goal Percentage=(Field Goals Made) + 0.5*3P Field Goals Made))/(Field Goal Attempts)
+        four_factor += (stats['FieldGoalsMade'] + 0.5 * stats['3PFieldGoalsMade']) / stats['FieldGoalAttempts'] * 0.4
+        # Turnover Rate=Turnovers/(Field Goal Attempts + 0.44*Free Throw Attempts + Turnovers)
+        four_factor += stats['Turnovers'] / (stats['FieldGoalAttempts'] + 0.44 * stats['FreeThrowAttempts'] + stats['Turnovers']) * 0.25
+        # Offensive Rebounding Percentage = (Offensive Rebounds)/[(Offensive Rebounds)+(Opponent’s Defensive Rebounds)]
+        four_factor += stats['OffensiveRebounds'] / (stats['OffensiveRebounds'] + stats['OpponentsDefensiveRebounds']) * 0.2
+        # Free Throw Rate=(Free Throws Made)/(Field Goals Attempted) or Free Throws Attempted/Field Goals Attempted
+        four_factor += stats['FreeThrowAttempts'] / stats['FieldGoalAttempts'] * 0.15
+
+        return four_factor
+
+    def predict(self, game_id, season, home_id, away_id):
         home_predictions = []
         away_predictions = []
 
-        if hid not in self.team_players:
+        if home_id not in self.team_players:
             return -1
 
-        if aid not in self.team_players:
+        if away_id not in self.team_players:
             return -1
 
-        for player_id in self.team_players[hid]:
+        for player_id in self.team_players[home_id]:
             if season in self.player_stats_average and player_id in self.player_stats_average[season] and len(self.player_stats_average[season][player_id]) >= 24:
                 df = pd.DataFrame(self.player_stats_average[season][player_id])
                 non_zero_df = df[df['MIN'] > 0]
@@ -184,7 +284,7 @@ class Model:
                 inputs = np.mean(raw_inputs, axis=0)
                 home_predictions.append(self.xg_reg.predict([inputs])[0])
 
-        for player_id in self.team_players[aid]:
+        for player_id in self.team_players[away_id]:
             if season in self.player_stats_average and player_id in self.player_stats_average[season] and len(self.player_stats_average[season][player_id]) >= 24:
                 df = pd.DataFrame(self.player_stats_average[season][player_id])
                 non_zero_df = df[df['MIN'] > 0]
@@ -196,39 +296,28 @@ class Model:
         if len(home_predictions) + len(away_predictions) < 16:
             return -1
 
-        xbg_factor = sum(home_predictions) / len(home_predictions) - sum(away_predictions) / len(away_predictions)
+        four_factor = self.get_team_four_factor(season, home_id) - self.get_team_four_factor(season, away_id)
 
-        self.prediction_map[id] = xbg_factor
+        self.fourfactor_prediction_map[game_id] = four_factor
 
-        if len(self.predictions) < 500:
+        xgb_factor = sum(home_predictions) / len(home_predictions) - sum(away_predictions) / len(away_predictions)
+
+        self.xgb_prediction_map[game_id] = xgb_factor
+
+        elo_factor = self.elo_map[home_id] - self.elo_map[away_id] + HOME_FACTOR
+
+        if len(self.ensamble_training_frames) < 500:
             return -1
 
         if self.lr_retrain_countdown == 0:
             self.lr_retrain_countdown = 100
 
-            np_data = np.array(self.predictions)[-2000:]
-            X = np_data[:, :3]
-            y = np_data[:, 3]
-            # odds_y = np_data[:, 4]
-
-            self.lr = LogisticRegression()
-            self.lr.fit(X, y)
+            self.fit_ensamble()
 
         self.lr_retrain_countdown -= 1
 
-        # metric_preds = model.predict_proba(X)[:, 1]
+        ensamble_pred = self.lr.predict_proba(np.array([xgb_factor, elo_factor, four_factor]).reshape(1, -1))[0, 1]
 
-        # r = np.corrcoef(metric_preds, odds_y)[0, 1]
-        # r_squared = r ** 2
+        self.prediction_map[game_id] = ensamble_pred
 
-        # print('')
-        # print('my_mse:      ', np.mean((metric_preds - y) ** 2))
-        # print('odds_mse:    ', np.mean((odds_y - y) ** 2))
-        # print('r:', r)
-        # print('r2:', r_squared)
-        # print('coefficients:', model.coef_)
-        # print('intercept:', model.intercept_)
-
-        elo_prediction = sigmoid(self.elo_map[hid] - self.elo_map[aid] + (1 - n) * HOME_FACTOR)
-
-        return self.lr.predict_proba(np.array([xbg_factor, elo_prediction, n]).reshape(1, -1))[0, 1]
+        return ensamble_pred
