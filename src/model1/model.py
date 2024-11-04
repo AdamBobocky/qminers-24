@@ -4,8 +4,6 @@ import xgboost as xgb
 import math
 from sklearn.linear_model import LogisticRegression
 
-# Betting start: 1979-02-07
-
 K_FACTOR = 0.15
 HOME_FACTOR = 0.5
 
@@ -25,7 +23,9 @@ class Model:
         self.frames_y = []
         self.game_y = []
         self.xg_reg = False
-        self.retrain_countdown = 40000
+        self.lr = False
+        self.retrain_countdown = 80000
+        self.lr_retrain_countdown = 0
 
         self.bet_volume = 0
         self.bet_count = 0
@@ -58,14 +58,14 @@ class Model:
                         odds_home = current['OddsH']
                         odds_away = current['OddsA']
 
-                        if my_pred * odds_home > 1.15 and odds_home < 3.5:
+                        if my_pred * odds_home > 1.08 and odds_home < 5:
                             bets.at[i, 'BetH'] = min_bet
 
                             self.bet_volume += min_bet
                             self.bet_count += 1
                             self.bet_sum_odds += odds_home
 
-                        if (1 - my_pred) * odds_away > 1.15 and odds_away < 3.5:
+                        if (1 - my_pred) * odds_away > 1.08 and odds_away < 5:
                             bets.at[i, 'BetA'] = min_bet
 
                             self.bet_volume += min_bet
@@ -138,7 +138,11 @@ class Model:
 
             if len(self.player_stats_average[season][player_id]) >= 24:
                 df = pd.DataFrame(self.player_stats_average[season][player_id])
-                inputs = df[['MIN', 'FGM', 'FGA', 'FG3M', 'FG3A', 'FTM', 'FTA', 'ORB', 'DRB', 'RB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS']].mean().to_numpy()
+                non_zero_df = df[df['MIN'] > 0]
+                np_array = non_zero_df[['MIN', 'FGM', 'FGA', 'FG3M', 'FG3A', 'FTM', 'FTA', 'ORB', 'DRB', 'RB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS']].to_numpy()
+                raw_inputs = np_array[:, 1:] / np_array[:, 0].reshape(-1, 1)
+                inputs = np.mean(raw_inputs, axis=0)
+
                 target = current['PTS']
 
                 self.indices.append([game_id, player_is_home_team])
@@ -159,22 +163,34 @@ class Model:
     def fit_xgboost(self):
         self.xg_reg = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=100, learning_rate=0.1)
 
-        self.xg_reg.fit(np.array(self.frames_X), np.array(self.frames_y))
+        self.xg_reg.fit(np.array(self.frames_X)[-100000:], np.array(self.frames_y)[-100000:])
 
     def predict(self, id, season, hid, aid, n):
         home_predictions = []
         away_predictions = []
 
+        if hid not in self.team_players:
+            return -1
+
+        if aid not in self.team_players:
+            return -1
+
         for player_id in self.team_players[hid]:
             if season in self.player_stats_average and player_id in self.player_stats_average[season] and len(self.player_stats_average[season][player_id]) >= 24:
                 df = pd.DataFrame(self.player_stats_average[season][player_id])
-                inputs = df[['MIN', 'FGM', 'FGA', 'FG3M', 'FG3A', 'FTM', 'FTA', 'ORB', 'DRB', 'RB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS']].mean().to_numpy()
+                non_zero_df = df[df['MIN'] > 0]
+                np_array = non_zero_df[['MIN', 'FGM', 'FGA', 'FG3M', 'FG3A', 'FTM', 'FTA', 'ORB', 'DRB', 'RB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS']].to_numpy()
+                raw_inputs = np_array[:, 1:] / np_array[:, 0].reshape(-1, 1)
+                inputs = np.mean(raw_inputs, axis=0)
                 home_predictions.append(self.xg_reg.predict([inputs])[0])
 
         for player_id in self.team_players[aid]:
             if season in self.player_stats_average and player_id in self.player_stats_average[season] and len(self.player_stats_average[season][player_id]) >= 24:
                 df = pd.DataFrame(self.player_stats_average[season][player_id])
-                inputs = df[['MIN', 'FGM', 'FGA', 'FG3M', 'FG3A', 'FTM', 'FTA', 'ORB', 'DRB', 'RB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS']].mean().to_numpy()
+                non_zero_df = df[df['MIN'] > 0]
+                np_array = non_zero_df[['MIN', 'FGM', 'FGA', 'FG3M', 'FG3A', 'FTM', 'FTA', 'ORB', 'DRB', 'RB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS']].to_numpy()
+                raw_inputs = np_array[:, 1:] / np_array[:, 0].reshape(-1, 1)
+                inputs = np.mean(raw_inputs, axis=0)
                 away_predictions.append(self.xg_reg.predict([inputs])[0])
 
         if len(home_predictions) + len(away_predictions) < 16:
@@ -184,27 +200,35 @@ class Model:
 
         self.prediction_map[id] = xbg_factor
 
-        if len(self.predictions) < 200:
+        if len(self.predictions) < 500:
             return -1
 
-        np_data = np.array(self.predictions)
-        X = np_data[:, :3]
-        y = np_data[:, 3]
-        odds_y = np_data[:, 4]
+        if self.lr_retrain_countdown == 0:
+            self.lr_retrain_countdown = 100
 
-        model = LogisticRegression()
-        model.fit(X, y)
-        metric_preds = model.predict_proba(X)[:, 1]
+            np_data = np.array(self.predictions)[-2000:]
+            X = np_data[:, :3]
+            y = np_data[:, 3]
+            # odds_y = np_data[:, 4]
 
-        r = np.corrcoef(metric_preds, odds_y)[0, 1]
-        r_squared = r ** 2
+            self.lr = LogisticRegression()
+            self.lr.fit(X, y)
 
-        print('')
-        print('my_mse:      ', np.mean((metric_preds - y) ** 2))
-        print('odds_mse:    ', np.mean((odds_y - y) ** 2))
-        print('r:', r)
-        print('r2:', r_squared)
+        self.lr_retrain_countdown -= 1
+
+        # metric_preds = model.predict_proba(X)[:, 1]
+
+        # r = np.corrcoef(metric_preds, odds_y)[0, 1]
+        # r_squared = r ** 2
+
+        # print('')
+        # print('my_mse:      ', np.mean((metric_preds - y) ** 2))
+        # print('odds_mse:    ', np.mean((odds_y - y) ** 2))
+        # print('r:', r)
+        # print('r2:', r_squared)
+        # print('coefficients:', model.coef_)
+        # print('intercept:', model.intercept_)
 
         elo_prediction = sigmoid(self.elo_map[hid] - self.elo_map[aid] + (1 - n) * HOME_FACTOR)
 
-        return model.predict_proba(np.array([xbg_factor, elo_prediction, n]).reshape(1, -1))[0, 1]
+        return self.lr.predict_proba(np.array([xbg_factor, elo_prediction, n]).reshape(1, -1))[0, 1]
