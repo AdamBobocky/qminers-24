@@ -1,0 +1,11 @@
+# Implementation of research/11_gradient_descent
+
+```
+Opps: 26405 Bets: 3644 Volume: 18220 Avg odds: 3.0925316381490537
+
+my_mse    0.20489189141936467 25855
+mkt_mse   0.20118018505282897 25855
+corr r    0.9100632408789594
+corr r2   0.8282151023991149
+1999-06-25 00:00:00 Bankroll: 1379.59
+```
