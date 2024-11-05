@@ -1,6 +1,7 @@
 from datetime import datetime
 import pandas as pd
 import numpy as np
+import json
 from sklearn.linear_model import LogisticRegression
 
 def date_to_timestamp(date_str):
@@ -132,6 +133,9 @@ my_mse = 0
 mkt_mse = 0
 n = 0
 
+mu_dist = []
+adv_dist = []
+
 for i in df.index:
     skip -= 1
 
@@ -181,6 +185,18 @@ for i in df.index:
     model.add_game(timestamp, my_team_id[home_id], my_team_id[away_id], home_score, away_score)
 
     model.fit()
+
+    if len(past_pred) % 500 == 0:
+        print('Saving')
+
+        mu_dist = mu_dist + (model.team_mus - np.mean(model.team_mus)).tolist()
+        adv_dist = adv_dist + (model.team_advantages - np.mean(model.team_advantages)).tolist()
+
+        with open('research/11_gradient_descent/mu_dist.json', "w") as json_file:
+            json.dump(mu_dist, json_file)
+
+        with open('research/11_gradient_descent/adv_dist.json', "w") as json_file:
+            json.dump(adv_dist, json_file)
 
     print('next:', len(past_pred))
 
