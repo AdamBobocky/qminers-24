@@ -135,6 +135,7 @@ n = 0
 
 mu_dist = []
 adv_dist = []
+residuals_dist = []
 
 for i in df.index:
     skip -= 1
@@ -182,6 +183,8 @@ for i in df.index:
 
     past_pred.append([pred, home_win])
 
+    residuals_dist.append((home_score - away_score) - pred)
+
     model.add_game(timestamp, my_team_id[home_id], my_team_id[away_id], home_score, away_score)
 
     model.fit()
@@ -198,6 +201,10 @@ for i in df.index:
         with open('research/11_gradient_descent/adv_dist.json', "w") as json_file:
             json.dump(adv_dist, json_file)
 
+        with open('research/11_gradient_descent/residuals_dist.json', "w") as json_file:
+            json.dump(residuals_dist, json_file)
+
     print('next:', len(past_pred))
+    print('residuals_std:', np.std(residuals_dist))
 
 print('Done')
