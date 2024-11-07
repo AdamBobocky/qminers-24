@@ -1,11 +1,21 @@
 # Implementation of research/11_gradient_descent
 
 ```
-Opps: 26405 Bets: 3644 Volume: 18220 Avg odds: 3.0925316381490537
+Params: 3.327590425103531 11.14863838608138
 
-my_mse    0.20489189141936467 25855
-mkt_mse   0.20118018505282897 25855
-corr r    0.9100632408789594
-corr r2   0.8282151023991149
-1999-06-25 00:00:00 Bankroll: 1379.59
+Opps: 24879 Bets: 1392 Volume: 6960 Avg odds: 3.7747590093421475 Exp avg P&L: 0.3857139924688577
+
+my_mse    0.20235296665634134 24372
+mkt_mse   0.20212937995800023 24372
+corr r    0.9626669860401144
+corr r2   0.9267277260115577
+1999-06-25 00:00:00 Bankroll: 1605.93
+Final bankroll: 1605.93
 ```
+
+
+## TODO list:
+
+* Re-implement per-team home advantage
+* Go down to player-level and lineup estimation (star player should for sure play)
+* Introduce ensambling mechanism and side-model loading
