@@ -11,35 +11,15 @@ from sklearn.linear_model import LogisticRegression
 def sigmoid(x):
     return 1 / (1 + math.exp(-x))
 
-def log_posterior(delta, my_rating, game_sigma, prior_sigma):
-    # Log likelihood:
-    #   ln(1 / (game_sigma * 2.50662828) * e ** (-0.5 * ((delta - my_rating) / game_sigma) ** 2))
-    # Prior:
-    #   ln(1 / (prior_sigma * 2.50662828) * e ** (-0.5 * (my_rating / prior_sigma) ** 2))
-    # Posterior:
-    #   ln(1 / (game_sigma * 2.50662828) * e ** (-0.5 * ((delta - my_rating) / game_sigma) ** 2)) + ln(1 / (prior_sigma * 2.50662828) * e ** (-0.5 * (my_rating / prior_sigma) ** 2))
-
-    return (1 / (game_sigma * 2.50662828) * np.exp(-0.5 * ((delta - my_rating) / game_sigma) ** 2)) * (1 / (prior_sigma * 2.50662828) * np.exp(-0.5 * (my_rating / prior_sigma) ** 2))
-    # return np.log(1 / (game_sigma * 2.50662828) * np.exp(-0.5 * ((delta - my_rating) / game_sigma) ** 2)) + np.log(1 / (prior_sigma * 2.50662828) * np.exp(-0.5 * (my_rating / prior_sigma) ** 2))
-
-def log_posterior_derivative_wrt_my_rating(delta, my_rating, game_sigma, prior_sigma):
-    # Log posterior letters:
-    #   ln(1 / (z * 2.50662828) * e ** (-0.5 * ((x - y) / z) ** 2)) + ln(1 / (h * 2.50662828) * e ** (-0.5 * (y / h) ** 2))
-    #     delta = x
-    #     my_rating = y
-    #     game_sigma = z
-    #     prior_sigma = h
-    # Log posterior derived wrt my_rating:
-    #   (x - y) / z ** 2 - y / h ** 2
-
-    return (delta - my_rating) / game_sigma ** 2 - my_rating / prior_sigma ** 2
-
 def log_likelihood(delta, game_sigma):
     # Log likelihood:
     #   ln(1 / (game_sigma * 2.50662828) * e ** (-0.5 * (delta / game_sigma) ** 2))
 
     return 1 / (game_sigma * 2.50662828) * np.exp(-0.5 * (delta / game_sigma) ** 2)
     # return np.log(1 / (game_sigma * 2.50662828) * np.exp(-0.5 * (delta / game_sigma) ** 2))
+
+def log_likelihood_derivative_wrt_my_rating(delta, game_sigma):
+    return delta / game_sigma ** 2
 
 def log_likelihood_derivative_wrt_delta(delta, game_sigma):
     # Log likelihood derivative wrt delta:
@@ -54,10 +34,9 @@ def log_likelihood_derivative_wrt_sigma(delta, game_sigma):
     return -(game_sigma ** 2 - delta ** 2) / game_sigma ** 3
 
 class GradientDescent:
-    def __init__(self, num_teams, learning_rate=0.03, prior_alpha=24, monthly_decay=0.9, season_reset_mult=0.2):
+    def __init__(self, num_teams, learning_rate=0.03, monthly_decay=0.9, season_reset_mult=0.2):
         # Hyperparameters
         self.learning_rate = learning_rate
-        self.prior_alpha = prior_alpha
         self.monthly_decay = monthly_decay
         self.season_reset_mult = season_reset_mult
 
@@ -68,7 +47,7 @@ class GradientDescent:
         self.home_advantage = 5
         self.sigma = 12 # Parameter for game variance outside of team uncertainty
         self.team_mus = np.zeros(num_teams)
-        self.team_sigmas = np.ones(num_teams) * prior_alpha / 3
+        self.team_sigmas = np.ones(num_teams) * 128 / 3
 
     def _gradients(self):
         weights = self._get_time_weights()
@@ -83,8 +62,8 @@ class GradientDescent:
 
         game_sigmas = np.sqrt(self.team_sigmas[self.games[:, 1]] ** 2 + self.team_sigmas[self.games[:, 2]] ** 2 + self.sigma ** 2)
 
-        mus_adjustments_home = log_posterior_derivative_wrt_my_rating(realities_home + away_ratings - self.home_advantage, home_ratings, game_sigmas, self.prior_alpha) * weights
-        mus_adjustments_away = log_posterior_derivative_wrt_my_rating(realities_away + home_ratings + self.home_advantage, away_ratings, game_sigmas, self.prior_alpha) * weights
+        mus_adjustments_home = log_likelihood_derivative_wrt_my_rating(realities_home + away_ratings - self.home_advantage - home_ratings, game_sigmas) * weights
+        mus_adjustments_away = log_likelihood_derivative_wrt_my_rating(realities_away + home_ratings + self.home_advantage - away_ratings, game_sigmas) * weights
         grad_sigma = log_likelihood_derivative_wrt_sigma(realities_home - expectations_home, game_sigmas) * weights
         grad_home_advantage = log_likelihood_derivative_wrt_delta(realities_home - expectations_home, game_sigmas) * weights
 
@@ -118,8 +97,8 @@ class GradientDescent:
 
         game_sigmas = np.sqrt(self.team_sigmas[self.games[:, 1]] ** 2 + self.team_sigmas[self.games[:, 2]] ** 2 + self.sigma ** 2)
 
-        home_objective = np.sum(log_posterior(realities_home + away_ratings - self.home_advantage, home_ratings, game_sigmas, self.prior_alpha) * weights)
-        away_objective = np.sum(log_posterior(realities_away + home_ratings + self.home_advantage, away_ratings, game_sigmas, self.prior_alpha) * weights)
+        home_objective = np.sum(log_likelihood(realities_home + away_ratings - self.home_advantage - home_ratings, game_sigmas) * weights)
+        away_objective = np.sum(log_likelihood(realities_away + home_ratings + self.home_advantage - away_ratings, game_sigmas) * weights)
         sigma_objective = np.sum(log_likelihood(realities_home - expectations_home, game_sigmas) * weights) * 0.1
 
         return home_objective + away_objective + sigma_objective
@@ -133,7 +112,7 @@ class GradientDescent:
         self.team_sigmas[team_away] = 1 / math.sqrt(1 / self.team_sigmas[team_away] ** 2 + 1 / self.sigma ** 2)
 
     def new_season(self):
-        self.team_sigmas = np.ones_like(self.team_sigmas) * (self.prior_alpha * self.season_reset_mult)
+        self.team_sigmas = np.ones_like(self.team_sigmas) * (128 * self.season_reset_mult)
 
     def fit(self):
         best_objective = self._calculate_objective()
@@ -159,16 +138,19 @@ class GradientDescent:
         game_exp = self.home_advantage + self.team_mus[team_home] - self.team_mus[team_away]
         game_sigma = math.sqrt(self.team_sigmas[team_home] ** 2 + self.team_sigmas[team_away] ** 2 + self.sigma ** 2)
 
-        return sigmoid(game_exp / game_sigma * 1.65), game_exp
+        # return sigmoid(game_exp / game_sigma * 1.65), game_exp
+        return game_exp / game_sigma, game_exp
 
 class Model:
-    def __init__(self, prior_alpha, monthly_decay, season_reset_mult):
-        self.model = GradientDescent(30, 0.03, prior_alpha, monthly_decay, season_reset_mult)
+    def __init__(self, monthly_decay, season_reset_mult):
+        self.model = GradientDescent(30, 0.03, monthly_decay, season_reset_mult)
         self.exp_map = {}
         self.prediction_map = {}
+        self.src_prediction_map = {}
         self.my_team_id = {}
         self.num_teams = 0
-        self.countdown = 4000
+        self.countdown = 3500
+        self.past_pred = []
         self.pred_list = []
         self.corr_me = []
         self.corr_mkt = []
@@ -189,7 +171,7 @@ class Model:
     def place_bets(self, summary: pd.DataFrame, opps: pd.DataFrame, inc: tuple[pd.DataFrame, pd.DataFrame]):
         games_increment, players_increment = inc
 
-        with open('data.json', "w") as json_file:
+        with open('src/model2/data.json', "w") as json_file:
             json.dump({
                 'team_ratings': self.model.team_mus.tolist(),
                 'corr_me': self.corr_me,
@@ -241,6 +223,10 @@ class Model:
                 self.my_team_id[away_id] = self.num_teams
                 self.num_teams += 1
 
+            if i in self.src_prediction_map:
+                src_pred = self.src_prediction_map[i]
+                self.past_pred.append([src_pred, home_win])
+
             if i in self.prediction_map:
                 self.metrics['my_mse'] += (self.prediction_map[i] - home_win) ** 2
                 self.metrics['mkt_mse'] += (mkt_pred - home_win) ** 2
@@ -250,10 +236,16 @@ class Model:
                 self.corr_mkt.append(mkt_pred)
 
                 self.pred_list.append({
+                    'index': str(i),
+                    'playoff': int(current['POFF']),
+                    'date': str(current['Date']),
+                    'season': int(current['Season']),
                     'score': int(home_score - away_score),
                     'my_exp': self.exp_map[i],
                     'my_pred': self.prediction_map[i],
                     'mkt_pred': mkt_pred,
+                    'odds_home': float(odds_home),
+                    'odds_away': float(odds_away),
                     'outcome': int(home_win)
                 })
 
@@ -280,33 +272,48 @@ class Model:
                 current = opps.loc[i]
 
                 if current['Date'] == summary.iloc[0]['Date'] and current['HID'] in self.my_team_id and current['AID'] in self.my_team_id:
-                    pred, exp = self.model.predict(self.my_team_id[current['HID']], self.my_team_id[current['AID']])
+                    src_pred, exp = self.model.predict(self.my_team_id[current['HID']], self.my_team_id[current['AID']])
 
-                    self.bet_opps += 1
-
+                    self.src_prediction_map[i] = src_pred
                     self.exp_map[i] = exp
-                    self.prediction_map[i] = pred
 
-                    odds_home = current['OddsH']
-                    odds_away = current['OddsA']
+                    if len(self.past_pred) >= 500:
+                        np_array = np.array(self.past_pred[-2000:])
 
-                    min_home_odds = (1 / pred - 1) * 1.3 + 1 + 0.04
-                    min_away_odds = (1 / (1 - pred) - 1) * 1.3 + 1 + 0.04
+                        self.bet_opps += 1
 
-                    if odds_home >= min_home_odds:
-                        bets.at[i, 'BetH'] = min_bet
+                        lr = LogisticRegression()
+                        # lr = LogisticRegression(fit_intercept=False)
+                        lr.fit(np_array[:, :-1], np_array[:, -1])
 
-                        self.exp_pnl += pred * odds_home - 1
-                        self.bet_volume += min_bet
-                        self.bet_count += 1
-                        self.bet_sum_odds += odds_home
+                        # print('\nModel intercept: ', lr.intercept_, 'coefficients:', lr.coef_)
 
-                    if odds_away >= min_away_odds:
-                        bets.at[i, 'BetA'] = min_bet
+                        pred = lr.predict_proba(np.array([src_pred]).reshape(1, -1))[0, 1]
 
-                        self.exp_pnl += (1 - pred) * odds_away - 1
-                        self.bet_volume += min_bet
-                        self.bet_count += 1
-                        self.bet_sum_odds += odds_away
+                        # self.prediction_map[i] = pred
+
+                        self.prediction_map[i] = pred
+
+                        odds_home = current['OddsH']
+                        odds_away = current['OddsA']
+
+                        min_home_odds = (1 / pred - 1) * 1.3 + 1 + 0.04
+                        min_away_odds = (1 / (1 - pred) - 1) * 1.3 + 1 + 0.04
+
+                        if odds_home >= min_home_odds:
+                            bets.at[i, 'BetH'] = min_bet
+
+                            self.exp_pnl += pred * odds_home - 1
+                            self.bet_volume += min_bet
+                            self.bet_count += 1
+                            self.bet_sum_odds += odds_home
+
+                        if odds_away >= min_away_odds:
+                            bets.at[i, 'BetA'] = min_bet
+
+                            self.exp_pnl += (1 - pred) * odds_away - 1
+                            self.bet_volume += min_bet
+                            self.bet_count += 1
+                            self.bet_sum_odds += odds_away
 
         return bets
