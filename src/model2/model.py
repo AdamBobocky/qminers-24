@@ -157,6 +157,8 @@ class Model:
         self.last_season = -1
 
         self.metrics = {
+            'my_ba': 0,
+            'mkt_ba': 0,
             'my_mse': 0,
             'mkt_mse': 0,
             'n': 0
@@ -171,7 +173,7 @@ class Model:
     def place_bets(self, summary: pd.DataFrame, opps: pd.DataFrame, inc: tuple[pd.DataFrame, pd.DataFrame]):
         games_increment, players_increment = inc
 
-        with open('src/model2/data.json', "w") as json_file:
+        with open('src/model2/data.json', 'w') as json_file:
             json.dump({
                 'team_ratings': self.model.team_mus.tolist(),
                 'corr_me': self.corr_me,
@@ -180,7 +182,7 @@ class Model:
                 'pred_list': self.pred_list
             }, json_file, indent=2)
 
-        print(f"\nParams: {self.model.home_advantage} {self.model.sigma}")
+        print(f'\nParams: {self.model.home_advantage} {self.model.sigma}')
 
         if self.bet_count > 0:
             print()
@@ -191,12 +193,15 @@ class Model:
             r_squared = r ** 2
 
             print('')
+            print('my_ba    ', self.metrics['my_ba'] / self.metrics['n'], self.metrics['n'])
+            print('mkt_ba   ', self.metrics['mkt_ba'] / self.metrics['n'], self.metrics['n'])
             print('my_mse   ', self.metrics['my_mse'] / self.metrics['n'], self.metrics['n'])
             print('mkt_mse  ', self.metrics['mkt_mse'] / self.metrics['n'], self.metrics['n'])
+            print('ba corr  ', np.sum(np.round(self.corr_me) == np.round(self.corr_mkt)) / len(self.corr_mkt))
             print('corr r   ', r)
             print('corr r2  ', r_squared)
 
-            with open('mse.json', "w") as json_file:
+            with open('mse.json', 'w') as json_file:
                 json.dump({
                     'mse': self.metrics['my_mse'] / self.metrics['n']
                 }, json_file, indent=2)
@@ -228,6 +233,16 @@ class Model:
                 self.past_pred.append([src_pred, home_win])
 
             if i in self.prediction_map:
+                if self.prediction_map[i] == 0.5:
+                    self.metrics['my_ba'] += 0.5
+                elif (self.prediction_map[i] > 0.5) == home_win:
+                    self.metrics['my_ba'] += 1
+
+                if mkt_pred == 0.5:
+                    self.metrics['mkt_ba'] += 0.5
+                elif (mkt_pred > 0.5) == home_win:
+                    self.metrics['mkt_ba'] += 1
+
                 self.metrics['my_mse'] += (self.prediction_map[i] - home_win) ** 2
                 self.metrics['mkt_mse'] += (mkt_pred - home_win) ** 2
                 self.metrics['n'] += 1
@@ -252,10 +267,10 @@ class Model:
             self.countdown -= 1
             self.model.add_game(timestamp, self.my_team_id[home_id], self.my_team_id[away_id], home_score, away_score)
 
-        min_bet = summary.iloc[0]["Min_bet"]
-        max_bet = summary.iloc[0]["Max_bet"]
+        min_bet = summary.iloc[0]['Min_bet']
+        max_bet = summary.iloc[0]['Max_bet']
 
-        bets = pd.DataFrame(data=np.zeros((len(opps), 2)), columns=["BetH", "BetA"], index=opps.index)
+        bets = pd.DataFrame(data=np.zeros((len(opps), 2)), columns=['BetH', 'BetA'], index=opps.index)
 
         if self.countdown <= 0:
             for i in opps.index:

@@ -1,7 +1,6 @@
 import math
 import numpy as np
 import pandas as pd
-from datetime import datetime
 from sklearn.linear_model import LogisticRegression
 import warnings
 
@@ -104,8 +103,8 @@ class GradientDescent:
         self.team_sigmas = np.ones_like(self.team_sigmas) * (128 * self.season_reset_mult)
 
     def fit(self):
-        best_objective = self._calculate_objective()
         games_count = len(self.games)
+        best_objective = self._calculate_objective() / games_count
         countdown = 50
         while countdown > 0:
             countdown -= 1
@@ -193,11 +192,11 @@ class Model:
             self.countdown -= 1
             self.model.add_game(timestamp, self.my_team_id[home_id], self.my_team_id[away_id], home_score, away_score)
 
-        min_bet = summary.iloc[0]["Min_bet"]
-        max_bet = summary.iloc[0]["Max_bet"]
-        my_bet = min(max_bet, min_bet + summary.iloc[0]["Bankroll"] / 100)
+        min_bet = summary.iloc[0]['Min_bet']
+        max_bet = summary.iloc[0]['Max_bet']
+        my_bet = max_bet * 0.1
 
-        bets = pd.DataFrame(data=np.zeros((len(opps), 2)), columns=["BetH", "BetA"], index=opps.index)
+        bets = pd.DataFrame(data=np.zeros((len(opps), 2)), columns=['BetH', 'BetA'], index=opps.index)
 
         if self.countdown <= 0:
             for i in opps.index:
@@ -234,8 +233,8 @@ class Model:
                         odds_home = current['OddsH']
                         odds_away = current['OddsA']
 
-                        min_home_odds = (1 / pred - 1) * 1.3 + 1 + 0.04
-                        min_away_odds = (1 / (1 - pred) - 1) * 1.3 + 1 + 0.04
+                        min_home_odds = (1 / pred - 1) * 1.2 + 1 + 0.03
+                        min_away_odds = (1 / (1 - pred) - 1) * 1.2 + 1 + 0.03
 
                         if odds_home >= min_home_odds:
                             bets.at[i, 'BetH'] = my_bet
