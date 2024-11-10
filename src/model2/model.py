@@ -1,7 +1,7 @@
 import math
 import numpy as np
 import pandas as pd
-import json
+# import json
 from datetime import datetime
 from sklearn.linear_model import LogisticRegression
 from collections import defaultdict
@@ -35,7 +35,7 @@ def log_likelihood_derivative_wrt_sigma(delta, game_sigma):
     return -(game_sigma ** 2 - delta ** 2) / game_sigma ** 3
 
 class GradientDescent:
-    def __init__(self, num_teams, learning_rate=0.03, monthly_decay=0.9, season_reset_mult=0.2):
+    def __init__(self, num_teams, learning_rate=0.01, monthly_decay=0.9, season_reset_mult=0.2):
         # Hyperparameters
         self.learning_rate = learning_rate
         self.monthly_decay = monthly_decay
@@ -116,8 +116,9 @@ class GradientDescent:
         self.team_sigmas = np.ones_like(self.team_sigmas) * (128 * self.season_reset_mult)
 
     def fit(self):
-        best_objective = self._calculate_objective()
         games_count = len(self.games)
+        best_objective = self._calculate_objective() / games_count
+        best_state = [self.team_mus, self.sigma, self.home_advantage]
         countdown = 50
         while countdown > 0:
             countdown -= 1
@@ -133,7 +134,10 @@ class GradientDescent:
             print(new_objective, end='\r')
             if new_objective > best_objective + 0.000001:
                 best_objective = new_objective
+                best_state = [self.team_mus, self.sigma, self.home_advantage]
                 countdown = 50
+
+        self.team_mus, self.sigma, self.home_advantage = best_state
 
     def predict(self, team_home, team_away):
         game_exp = self.home_advantage + self.team_mus[team_home] - self.team_mus[team_away]
@@ -141,21 +145,148 @@ class GradientDescent:
 
         return game_exp / game_sigma
 
-class Model:
-    def __init__(self, monthly_decay, season_reset_mult):
-        self.model = GradientDescent(30, 0.03, monthly_decay, season_reset_mult)
+class FourFactor:
+    def __init__(self):
         self.team_stats_average = defaultdict(list)
         self.opponent_stats_average = defaultdict(list)
-        self.input_map = {}
+
+    def _get_stats(self, date, stats):
+        totals = {
+            'FieldGoalsMade': 0,
+            '3PFieldGoalsMade': 0,
+            'FieldGoalAttempts': 0,
+            'Turnovers': 0,
+            'OffensiveRebounds': 0,
+            'OpponentsDefensiveRebounds': 0,
+            'FreeThrowAttempts': 0,
+            'Score': 0,
+            'Win': 0,
+            'Weight': 0
+        }
+
+        # Iterate over each dictionary in the list
+        for stat in stats:
+            weight = 0.994 ** abs((date - stat['Date']).days)
+
+            # Multiply each relevant field by the weight and add to totals
+            totals['FieldGoalsMade'] += stat['FieldGoalsMade'] * weight
+            totals['3PFieldGoalsMade'] += stat['3PFieldGoalsMade'] * weight
+            totals['FieldGoalAttempts'] += stat['FieldGoalAttempts'] * weight
+            totals['Turnovers'] += stat['Turnovers'] * weight
+            totals['OffensiveRebounds'] += stat['OffensiveRebounds'] * weight
+            totals['OpponentsDefensiveRebounds'] += stat['OpponentsDefensiveRebounds'] * weight
+            totals['FreeThrowAttempts'] += stat['FreeThrowAttempts'] * weight
+            totals['Score'] += stat['Score'] * weight
+            totals['Win'] += stat['Win'] * weight
+            totals['Weight'] += weight
+
+        return totals
+
+    def add_game(self, current):
+        self.team_stats_average[current['HID']].append({
+            'Date': current['Date'],
+            'FieldGoalsMade': current['HFGM'],
+            '3PFieldGoalsMade': current['HFG3M'],
+            'FieldGoalAttempts': current['HFGA'],
+            'Turnovers': current['HTOV'],
+            'OffensiveRebounds': current['HORB'],
+            'OpponentsDefensiveRebounds': current['ADRB'],
+            'FreeThrowAttempts': current['HFTA'],
+            'Score': current['HSC'],
+            'Win': current['H']
+        })
+        self.team_stats_average[current['AID']].append({
+            'Date': current['Date'],
+            'FieldGoalsMade': current['AFGM'],
+            '3PFieldGoalsMade': current['AFG3M'],
+            'FieldGoalAttempts': current['AFGA'],
+            'Turnovers': current['ATOV'],
+            'OffensiveRebounds': current['AORB'],
+            'OpponentsDefensiveRebounds': current['ADRB'],
+            'FreeThrowAttempts': current['AFTA'],
+            'Score': current['ASC'],
+            'Win': current['A']
+        })
+        # Opponent
+        self.opponent_stats_average[current['AID']].append({
+            'Date': current['Date'],
+            'FieldGoalsMade': current['HFGM'],
+            '3PFieldGoalsMade': current['HFG3M'],
+            'FieldGoalAttempts': current['HFGA'],
+            'Turnovers': current['HTOV'],
+            'OffensiveRebounds': current['HORB'],
+            'OpponentsDefensiveRebounds': current['ADRB'],
+            'FreeThrowAttempts': current['HFTA'],
+            'Score': current['HSC'],
+            'Win': current['H']
+        })
+        self.opponent_stats_average[current['HID']].append({
+            'Date': current['Date'],
+            'FieldGoalsMade': current['AFGM'],
+            '3PFieldGoalsMade': current['AFG3M'],
+            'FieldGoalAttempts': current['AFGA'],
+            'Turnovers': current['ATOV'],
+            'OffensiveRebounds': current['AORB'],
+            'OpponentsDefensiveRebounds': current['ADRB'],
+            'FreeThrowAttempts': current['AFTA'],
+            'Score': current['ASC'],
+            'Win': current['A']
+        })
+
+    def get_input_data(self, date, team_id):
+        if len(self.team_stats_average[team_id]) <= 5:
+            return None
+
+        stats = self._get_stats(date, self.team_stats_average[team_id])
+        opp_stats = self._get_stats(date, self.opponent_stats_average[team_id])
+
+        return [
+            (stats['FieldGoalsMade'] + 0.5 * stats['3PFieldGoalsMade']) / stats['FieldGoalAttempts'],
+            stats['Turnovers'] / (stats['FieldGoalAttempts'] + 0.44 * stats['FreeThrowAttempts'] + stats['Turnovers']),
+            stats['OffensiveRebounds'] / (stats['OffensiveRebounds'] + stats['OpponentsDefensiveRebounds']),
+            stats['FreeThrowAttempts'] / stats['FieldGoalAttempts'],
+            stats['Score'] / stats['Weight'],
+            (opp_stats['FieldGoalsMade'] + 0.5 * opp_stats['3PFieldGoalsMade']) / opp_stats['FieldGoalAttempts'],
+            opp_stats['Turnovers'] / (opp_stats['FieldGoalAttempts'] + 0.44 * opp_stats['FreeThrowAttempts'] + opp_stats['Turnovers']),
+            opp_stats['OffensiveRebounds'] / (opp_stats['OffensiveRebounds'] + opp_stats['OpponentsDefensiveRebounds']),
+            opp_stats['FreeThrowAttempts'] / opp_stats['FieldGoalAttempts'],
+            opp_stats['Score'] / opp_stats['Weight']
+        ]
+
+class Elo:
+    def __init__(self, k_factor = 0.15, home_factor = 0.5):
+        self.k_factor = k_factor
+        self.home_factor = home_factor
+
+        self.elo_map = defaultdict(float)
+
+    def predict(self, home_id, away_id):
+        return sigmoid(self.elo_map[home_id] - self.elo_map[away_id] + self.home_factor)
+
+    def add_game(self, current):
+        home_id = current['HID']
+        away_id = current['AID']
+
+        elo_prediction = self.predict(home_id, away_id)
+
+        self.elo_map[home_id] += self.k_factor * (current['H'] - elo_prediction)
+        self.elo_map[away_id] += self.k_factor * (current['A'] - (1 - elo_prediction))
+
+class Model:
+    def __init__(self, monthly_decay=0.75, season_reset_mult=0.8):
+        self.gd_model = GradientDescent(30, 0.03, monthly_decay, season_reset_mult)
+        self.ff_model = FourFactor()
+        self.el_model = Elo()
+
         self.prediction_map = {}
         self.my_team_id = {}
-        self.num_teams = 0
         self.countdown = 3500
         self.past_pred = []
         self.pred_list = []
         self.corr_me = []
         self.corr_mkt = []
         self.last_season = -1
+        self.season_start = 0
         self.lr = None
         self.lr_retrain = 0
 
@@ -173,73 +304,34 @@ class Model:
         self.bet_count = 0
         self.bet_sum_odds = 0
 
-    def get_stats(self, date, stats):
-        totals = {
-            'FieldGoalsMade': 0,
-            '3PFieldGoalsMade': 0,
-            'FieldGoalAttempts': 0,
-            'Turnovers': 0,
-            'OffensiveRebounds': 0,
-            'OpponentsDefensiveRebounds': 0,
-            'FreeThrowAttempts': 0,
-            'Score': 0,
-            'Win': 0,
-            'Weight': 0
-        }
+    def get_input_features(self, home_id, away_id, date):
+        if home_id not in self.my_team_id:
+            return None
+        if away_id not in self.my_team_id:
+            return None
 
-        # Iterate over each dictionary in the list
-        for stat in stats:
-            weight = 0.994 ** (date - stat['Date']).days
+        home_ff = self.ff_model.get_input_data(date, home_id)
+        away_ff = self.ff_model.get_input_data(date, away_id)
 
-            # Multiply each relevant field by the weight and add to totals
-            totals['FieldGoalsMade'] += stat['FieldGoalsMade'] * weight
-            totals['3PFieldGoalsMade'] += stat['3PFieldGoalsMade'] * weight
-            totals['FieldGoalAttempts'] += stat['FieldGoalAttempts'] * weight
-            totals['Turnovers'] += stat['Turnovers'] * weight
-            totals['OffensiveRebounds'] += stat['OffensiveRebounds'] * weight
-            totals['OpponentsDefensiveRebounds'] += stat['OpponentsDefensiveRebounds'] * weight
-            totals['FreeThrowAttempts'] += stat['FreeThrowAttempts'] * weight
-            totals['Score'] += stat['Score'] * weight
-            totals['Win'] += stat['Win'] * weight
-            totals['Weight'] += weight
-
-        return totals
-
-    def get_team_four_factor(self, date, team_id):
-        stats = self.get_stats(date, self.team_stats_average[team_id])
-        opp_stats = self.get_stats(date, self.opponent_stats_average[team_id])
+        if home_ff is None or away_ff is None:
+            return None
 
         return [
-            (stats['FieldGoalsMade'] + 0.5 * stats['3PFieldGoalsMade']) / stats['FieldGoalAttempts'],
-            stats['Turnovers'] / (stats['FieldGoalAttempts'] + 0.44 * stats['FreeThrowAttempts'] + stats['Turnovers']),
-            stats['OffensiveRebounds'] / (stats['OffensiveRebounds'] + stats['OpponentsDefensiveRebounds']),
-            stats['FreeThrowAttempts'] / stats['FieldGoalAttempts'],
-            stats['Score'] / stats['Weight'],
-            (opp_stats['FieldGoalsMade'] + 0.5 * opp_stats['3PFieldGoalsMade']) / opp_stats['FieldGoalAttempts'],
-            opp_stats['Turnovers'] / (opp_stats['FieldGoalAttempts'] + 0.44 * opp_stats['FreeThrowAttempts'] + opp_stats['Turnovers']),
-            opp_stats['OffensiveRebounds'] / (opp_stats['OffensiveRebounds'] + opp_stats['OpponentsDefensiveRebounds']),
-            opp_stats['FreeThrowAttempts'] / opp_stats['FieldGoalAttempts'],
-            opp_stats['Score'] / opp_stats['Weight']
+            self.el_model.predict(home_id, away_id),
+            self.gd_model.predict(self.my_team_id[home_id], self.my_team_id[away_id]),
+            *home_ff,
+            *away_ff
         ]
 
-    def place_bets(self, summary: pd.DataFrame, opps: pd.DataFrame, inc: tuple[pd.DataFrame, pd.DataFrame]):
-        games_increment, players_increment = inc
-
-        with open('src/model2/data.json', 'w') as json_file:
-            json.dump(self.pred_list, json_file, indent=2)
-
-        print(f'\nParams: {self.model.home_advantage} {self.model.sigma}')
-
+    def print_metrics(self):
         if self.bet_count > 0:
-            print()
-            print('Opps:', self.bet_opps, 'Bets:', self.bet_count, 'Volume:', self.bet_volume, 'Avg odds:', self.bet_sum_odds / self.bet_count, 'Exp avg P&L:', self.exp_pnl / self.bet_count)
+            print('\nOpps:', self.bet_opps, 'Bets:', self.bet_count, 'Volume:', self.bet_volume, 'Avg odds:', self.bet_sum_odds / self.bet_count, 'Exp avg P&L:', self.exp_pnl / self.bet_count)
 
         if self.metrics['n'] > 0:
             r = np.corrcoef(self.corr_me, self.corr_mkt)[0, 1]
             r_squared = r ** 2
 
-            print('')
-            print('my_ba    ', self.metrics['my_ba'] / self.metrics['n'], self.metrics['n'])
+            print('\nmy_ba    ', self.metrics['my_ba'] / self.metrics['n'], self.metrics['n'])
             print('mkt_ba   ', self.metrics['mkt_ba'] / self.metrics['n'], self.metrics['n'])
             print('my_mse   ', self.metrics['my_mse'] / self.metrics['n'], self.metrics['n'])
             print('mkt_mse  ', self.metrics['mkt_mse'] / self.metrics['n'], self.metrics['n'])
@@ -247,10 +339,15 @@ class Model:
             print('corr r   ', r)
             print('corr r2  ', r_squared)
 
-            # with open('mse.json', 'w') as json_file:
-            #     json.dump({
-            #         'mse': self.metrics['my_mse'] / self.metrics['n']
-            #     }, json_file, indent=2)
+    def place_bets(self, summary: pd.DataFrame, opps: pd.DataFrame, inc: tuple[pd.DataFrame, pd.DataFrame]):
+        games_increment, players_increment = inc
+
+        last_fit = None
+
+        self.print_metrics()
+
+        # with open('src/model2/data.json', 'w') as json_file:
+        #     json.dump(self.pred_list, json_file, indent=2)
 
         for i in games_increment.index:
             current = games_increment.loc[i]
@@ -266,69 +363,26 @@ class Model:
             overround = 1 / odds_home + 1 / odds_away
             mkt_pred = 1 / odds_home / overround
 
-            self.team_stats_average[home_id].append({
-                'Date': current['Date'],
-                'FieldGoalsMade': current['HFGM'],
-                '3PFieldGoalsMade': current['HFG3M'],
-                'FieldGoalAttempts': current['HFGA'],
-                'Turnovers': current['HTOV'],
-                'OffensiveRebounds': current['HORB'],
-                'OpponentsDefensiveRebounds': current['ADRB'],
-                'FreeThrowAttempts': current['HFTA'],
-                'Score': current['HSC'],
-                'Win': current['H']
-            })
-            self.team_stats_average[away_id].append({
-                'Date': current['Date'],
-                'FieldGoalsMade': current['AFGM'],
-                '3PFieldGoalsMade': current['AFG3M'],
-                'FieldGoalAttempts': current['AFGA'],
-                'Turnovers': current['ATOV'],
-                'OffensiveRebounds': current['AORB'],
-                'OpponentsDefensiveRebounds': current['ADRB'],
-                'FreeThrowAttempts': current['AFTA'],
-                'Score': current['ASC'],
-                'Win': current['A']
-            })
-
-            # Opponent
-            self.opponent_stats_average[away_id].append({
-                'Date': current['Date'],
-                'FieldGoalsMade': current['HFGM'],
-                '3PFieldGoalsMade': current['HFG3M'],
-                'FieldGoalAttempts': current['HFGA'],
-                'Turnovers': current['HTOV'],
-                'OffensiveRebounds': current['HORB'],
-                'OpponentsDefensiveRebounds': current['ADRB'],
-                'FreeThrowAttempts': current['HFTA'],
-                'Score': current['HSC'],
-                'Win': current['H']
-            })
-
-            self.opponent_stats_average[home_id].append({
-                'Date': current['Date'],
-                'FieldGoalsMade': current['AFGM'],
-                '3PFieldGoalsMade': current['AFG3M'],
-                'FieldGoalAttempts': current['AFGA'],
-                'Turnovers': current['ATOV'],
-                'OffensiveRebounds': current['AORB'],
-                'OpponentsDefensiveRebounds': current['ADRB'],
-                'FreeThrowAttempts': current['AFTA'],
-                'Score': current['ASC'],
-                'Win': current['A']
-            })
-
             if home_id not in self.my_team_id:
-                self.my_team_id[home_id] = self.num_teams
-                self.num_teams += 1
+                self.my_team_id[home_id] = len(self.my_team_id)
 
             if away_id not in self.my_team_id:
-                self.my_team_id[away_id] = self.num_teams
-                self.num_teams += 1
+                self.my_team_id[away_id] = len(self.my_team_id)
 
-            if i in self.input_map:
-                self.lr_retrain -= 1
-                self.past_pred.append([*self.input_map[i], home_win])
+            if self.last_season != current['Season']:
+                self.last_season = current['Season']
+                self.season_start = current['Date']
+                self.gd_model.new_season()
+
+            if self.countdown <= 0:
+                if last_fit is None or last_fit != current['Date']:
+                    last_fit = current['Date']
+                    self.gd_model.fit()
+
+                input_arr = self.get_input_features(home_id, away_id, current['Date'])
+                if input_arr is not None:
+                    self.lr_retrain -= 1
+                    self.past_pred.append([*input_arr, home_win])
 
             if i in self.prediction_map:
                 if self.prediction_map[i] == 0.5:
@@ -363,7 +417,9 @@ class Model:
                 })
 
             self.countdown -= 1
-            self.model.add_game(timestamp, self.my_team_id[home_id], self.my_team_id[away_id], home_score, away_score)
+            self.el_model.add_game(current)
+            self.ff_model.add_game(current)
+            self.gd_model.add_game(timestamp, self.my_team_id[home_id], self.my_team_id[away_id], home_score, away_score)
 
         min_bet = summary.iloc[0]['Min_bet']
         max_bet = summary.iloc[0]['Max_bet']
@@ -371,15 +427,7 @@ class Model:
         bets = pd.DataFrame(data=np.zeros((len(opps), 2)), columns=['BetH', 'BetA'], index=opps.index)
 
         if self.countdown <= 0:
-            for i in opps.index:
-                current = opps.loc[i]
-
-                if self.last_season != current['Season']:
-                    self.last_season = current['Season']
-
-                    self.model.new_season()
-
-            self.model.fit()
+            self.gd_model.fit()
 
             for i in opps.index:
                 current = opps.loc[i]
@@ -387,37 +435,33 @@ class Model:
                 date = current['Date']
                 home_id = current['HID']
                 away_id = current['AID']
+                week = (date - self.season_start).days / 7
+                conf = 0.00838 * week + 0.826
 
-                cond = home_id in self.team_stats_average and away_id in self.team_stats_average and len(self.team_stats_average[home_id]) > 5 and len(self.team_stats_average[away_id]) > 5
+                if date == summary.iloc[0]['Date'] and self.last_season == current['Season']:
+                    input_arr = self.get_input_features(home_id, away_id, date)
 
-                if cond and date == summary.iloc[0]['Date'] and home_id in self.my_team_id and away_id in self.my_team_id:
-                    src_pred = self.model.predict(self.my_team_id[home_id], self.my_team_id[away_id])
-
-                    input_arr = [src_pred, *self.get_team_four_factor(date, home_id), *self.get_team_four_factor(date, away_id)]
-
-                    self.input_map[i] = input_arr
-
-                    if len(self.past_pred) >= 1500:
+                    if input_arr is not None and len(self.past_pred) >= 1500:
                         if self.lr_retrain <= 0:
                             self.lr_retrain += 200
                             np_array = np.array(self.past_pred)
                             sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
                             self.lr = LogisticRegression(max_iter=10000)
-                            self.lr.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights)
+                            self.lr.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights[::-1])
 
                         self.bet_opps += 1
 
                         pred = self.lr.predict_proba(np.array([input_arr]))[0, 1]
 
-                        pred = sigmoid(inverse_sigmoid(pred) * 0.94)
+                        pred = sigmoid(inverse_sigmoid(pred) * conf)
 
                         self.prediction_map[i] = pred
 
                         odds_home = current['OddsH']
                         odds_away = current['OddsA']
 
-                        min_home_odds = (1 / ajd_pred - 1) * 1.1 + 1 + 0.03
-                        min_away_odds = (1 / (1 - pred) - 1) * 1.1 + 1 + 0.03
+                        min_home_odds = (1 / pred - 1) * 1.25 + 1 + 0.00
+                        min_away_odds = (1 / (1 - pred) - 1) * 1.25 + 1 + 0.00
 
                         if odds_home >= min_home_odds:
                             bets.at[i, 'BetH'] = min_bet
@@ -436,41 +480,3 @@ class Model:
                             self.bet_sum_odds += odds_away
 
         return bets
-
-# Graph OG:
-#     Opps: 24879 Bets: 1745 Volume: 8725 Avg odds: 3.4767797554207664 Exp avg P&L: 0.33135855849326507
-#     my_ba     0.6838585261775808 24372
-#     mkt_ba    0.6824634826850484 24372
-#     my_mse    0.20230683250700332 24372
-#     mkt_mse   0.20212937995800023 24372
-#     ba corr   0.9364844903988183
-#     corr r    0.9613589889921241
-#     corr r2   0.924211105715959
-#     1999-06-25 00:00:00 Bankroll: 1814.04
-# Four factor:
-#     Opps: 0 Bets: 4020 Volume: 20100 Avg odds: 2.2278081206614466 Exp avg P&L: 0.16055138004912142
-#     my_mse    0.20085023330345558 26756
-#     mkt_mse   0.20076938119769097 26756
-#     corr r    0.9595402676146002
-#     corr r2   0.9207175251738986
-#     1999-06-25 00:00:00 Bankroll: 1819.34
-# Combo:
-#     Opps: 23832 Bets: 3914 Volume: 19570 Avg odds: 3.3557838108297413 Exp avg P&L: 0.19066813564284021
-#     my_ba     0.6839535780052246 23351
-#     mkt_ba    0.6809130229968738 23351
-#     my_mse    0.202738023216877 23351
-#     mkt_mse   0.20289366736179948 23351
-#     ba corr   0.9350349021455184
-#     corr r    0.9659846965854572
-#     corr r2   0.9331264340372978
-#     1999-06-25 00:00:00 Bankroll: 1953.28
-# Combo weighted:
-#     Opps: 23832 Bets: 2764 Volume: 13820 Avg odds: 2.818472982697855 Exp avg P&L: 0.15706414624178494
-#     my_ba     0.6839107532867972 23351
-#     mkt_ba    0.6809130229968738 23351
-#     my_mse    0.2025671092333987 23351
-#     mkt_mse   0.20289366736179948 23351
-#     ba corr   0.9428718256177465
-#     corr r    0.9711066661656828
-#     corr r2   0.9430481570714269
-#     1999-06-25 00:00:00 Bankroll: 2165.46
