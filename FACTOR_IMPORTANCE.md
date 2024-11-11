@@ -8,7 +8,7 @@
 4.  [ ??% ] ??????????
 5.  [ 10% ] Mixed models / dynamics
 6.  [ 10% ] Match importance / motivation
-7.  [ 5% ] Rivalry
-8.  [ 5% ] Exhaustion
-9.  [ 5% ] Momentum
-10. [ 5% ] Organization contribution
+7.  [ 5 % ] Rivalry
+8.  [ 5 % ] Exhaustion
+9.  [ 5 % ] Momentum
+10. [ 5 % ] Organization contribution

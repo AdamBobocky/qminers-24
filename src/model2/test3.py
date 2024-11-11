@@ -8,8 +8,15 @@ from sklearn.linear_model import LogisticRegression
 def inverse_sigmoid(x):
     return math.log(x / (1 - x))
 
+def sigmoid(x):
+    return 1 / (1 + math.exp(-x))
+
 with open('src/model2/data.json', 'r') as file:
     data = json.load(file)
+
+data = [x for x in data if int(x['date'][0:4]) >= 1990]
+
+# print(data)
 
 last_season = -1
 season_start = 0
@@ -25,7 +32,7 @@ for el in data:
 
     date = datetime.strptime(el['date'], '%Y-%m-%d %H:%M:%S')
     week = (date - season_start).days // 7
-    pred = el['my_pred']
+    pred = sigmoid(inverse_sigmoid(el['my_pred']) * 1.05)
     outcome = el['outcome']
 
     if week not in week_roi:

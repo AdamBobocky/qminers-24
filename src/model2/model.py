@@ -1,7 +1,7 @@
 import math
 import numpy as np
 import pandas as pd
-# import json
+import json
 from datetime import datetime
 from sklearn.linear_model import LogisticRegression
 from collections import defaultdict
@@ -254,7 +254,7 @@ class FourFactor:
         ]
 
 class Elo:
-    def __init__(self, k_factor = 0.15, home_factor = 0.5):
+    def __init__(self, k_factor=0.15, home_factor=0.5):
         self.k_factor = k_factor
         self.home_factor = home_factor
 
@@ -346,8 +346,8 @@ class Model:
 
         self.print_metrics()
 
-        # with open('src/model2/data.json', 'w') as json_file:
-        #     json.dump(self.pred_list, json_file, indent=2)
+        with open('data.json', 'w') as json_file:
+            json.dump(self.pred_list, json_file, indent=2)
 
         for i in games_increment.index:
             current = games_increment.loc[i]
@@ -436,7 +436,7 @@ class Model:
                 home_id = current['HID']
                 away_id = current['AID']
                 week = (date - self.season_start).days / 7
-                conf = 0.00838 * week + 0.826
+                conf = 0.00838 * week + 0.876
 
                 if date == summary.iloc[0]['Date'] and self.last_season == current['Season']:
                     input_arr = self.get_input_features(home_id, away_id, date)
@@ -460,8 +460,8 @@ class Model:
                         odds_home = current['OddsH']
                         odds_away = current['OddsA']
 
-                        min_home_odds = (1 / pred - 1) * 1.25 + 1 + 0.00
-                        min_away_odds = (1 / (1 - pred) - 1) * 1.25 + 1 + 0.00
+                        min_home_odds = (1 / pred - 1) * 1.02 + 1 + 0.00
+                        min_away_odds = (1 / (1 - pred) - 1) * 1.06 + 1 + 0.04
 
                         if odds_home >= min_home_odds:
                             bets.at[i, 'BetH'] = min_bet

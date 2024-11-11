@@ -1,12 +1,24 @@
+import math
 import json
-from datetime import datetime
 import plotly.graph_objects as go
+from datetime import datetime
 
 with open('src/model2/data.json', 'r') as file:
     data = json.load(file)
 
+data = [x for x in data if int(x['date'][0:4]) >= 1990]
+
+def inverse_sigmoid(x):
+    return math.log(x / (1 - x))
+
+def sigmoid(x):
+    return 1 / (1 + math.exp(-x))
+
 last_season = -1
 season_start = 0
+
+pnl = 0
+bets = 0
 
 season_roi = {}
 week_roi = {}
@@ -19,14 +31,14 @@ for el in data:
     # Make a bet
     date = datetime.strptime(el['date'], '%Y-%m-%d %H:%M:%S')
     season = el['season']
-    pred = el['my_pred']
+    pred = sigmoid(inverse_sigmoid(el['my_pred']) * 1.05)
     odds_home = el['odds_home']
     odds_away = el['odds_away']
     outcome = el['outcome']
     week = (date - season_start).days // 7
 
-    min_home_odds = (1 / pred - 1) * 1.3 + 1 + 0.04
-    min_away_odds = (1 / (1 - pred) - 1) * 1.3 + 1 + 0.04
+    min_home_odds = (1 / pred - 1) * 1.02 + 1 + 0.0
+    min_away_odds = (1 / (1 - pred) - 1) * 1.06 + 1 + 0.04
 
     if season not in season_roi:
         season_roi[season] = [0, 0, 0]
@@ -44,6 +56,9 @@ for el in data:
         week_roi[week][0] += (outcome * odds_home) - 1
         week_roi[week][1] += 1
 
+        pnl += (outcome * odds_home) - 1
+        bets += 1
+
     if odds_away > min_away_odds:
         season_roi[season][0] += ((1 - outcome) * odds_away) - 1
         season_roi[season][1] += 1
@@ -51,8 +66,14 @@ for el in data:
         week_roi[week][0] += ((1 - outcome) * odds_away) - 1
         week_roi[week][1] += 1
 
-print(season_roi)
-print(week_roi)
+        pnl += ((1 - outcome) * odds_away) - 1
+        bets += 1
+
+print('P&L:')
+print(pnl, pnl / bets, bets)
+
+# print(season_roi)
+# print(week_roi)
 
 sorted_data = dict(sorted(week_roi.items()))
 
@@ -78,4 +99,4 @@ fig.update_layout(
 )
 
 # Show the plot
-fig.show()
+# fig.show()
