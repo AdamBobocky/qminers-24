@@ -94,6 +94,8 @@ class Model:
 
             if current['Date'] == summary.iloc[0]['Date'] and str_i in predictions:
                 if len(self.past_pred) >= 1500:
+                    self.bet_opps += 1
+
                     np_array = np.array(self.past_pred)
                     sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
                     lr = LogisticRegression(max_iter=10000)
@@ -106,8 +108,8 @@ class Model:
                     odds_home = current['OddsH']
                     odds_away = current['OddsA']
 
-                    min_home_odds = (1 / pred - 1) * 1.5 + 1 + 0.1
-                    min_away_odds = (1 / (1 - pred) - 1) * 1.5 + 1 + 0.1
+                    min_home_odds = (1 / pred - 1) * 1.1 + 1 + 0.05
+                    min_away_odds = (1 / (1 - pred) - 1) * 1.1 + 1 + 0.05
 
                     if odds_home >= min_home_odds:
                         bets.at[i, 'BetH'] = min_bet

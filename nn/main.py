@@ -18,11 +18,11 @@ class PlayerRatingModel(nn.Module):
         #     nn.Linear(15, 1)
         # )
         self.layers = nn.Sequential(
-            nn.Linear(16, 8),
+            nn.Linear(27, 12),
             nn.ReLU(),
-            nn.Linear(8, 4),
+            nn.Linear(12, 6),
             nn.ReLU(),
-            nn.Linear(4, 1)
+            nn.Linear(6, 1)
         )
 
     def forward(self, player_stats, game_weight):

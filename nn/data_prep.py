@@ -2,8 +2,9 @@ import math
 import json
 import pandas as pd
 import numpy as np
-from collections import defaultdict
 import copy
+from collections import defaultdict
+from datetime import datetime
 
 players_df = pd.read_csv('data/players.csv')
 games_df = pd.read_csv('data/games.csv')
@@ -17,7 +18,130 @@ away_playtimes = []
 outputs = []
 team_rosters = {}
 
+class FourFactor:
+    def __init__(self):
+        self.team_stats_average = defaultdict(list)
+        self.opponent_stats_average = defaultdict(list)
+        self.cache = {}
+
+    def _get_stats(self, date, stats):
+        totals = {
+            'FieldGoalsMade': 0,
+            '3PFieldGoalsMade': 0,
+            'FieldGoalAttempts': 0,
+            'Turnovers': 0,
+            'OffensiveRebounds': 0,
+            'OpponentsDefensiveRebounds': 0,
+            'FreeThrowAttempts': 0,
+            'Score': 0,
+            'Win': 0,
+            'Weight': 0
+        }
+
+        date = datetime.strptime(date, '%Y-%m-%d')
+
+        # Iterate over each dictionary in the list
+        for stat in stats:
+            weight = 0.994 ** abs((date - datetime.strptime(stat['Date'], '%Y-%m-%d')).days)
+
+            # Multiply each relevant field by the weight and add to totals
+            totals['FieldGoalsMade'] += stat['FieldGoalsMade'] * weight
+            totals['3PFieldGoalsMade'] += stat['3PFieldGoalsMade'] * weight
+            totals['FieldGoalAttempts'] += stat['FieldGoalAttempts'] * weight
+            totals['Turnovers'] += stat['Turnovers'] * weight
+            totals['OffensiveRebounds'] += stat['OffensiveRebounds'] * weight
+            totals['OpponentsDefensiveRebounds'] += stat['OpponentsDefensiveRebounds'] * weight
+            totals['FreeThrowAttempts'] += stat['FreeThrowAttempts'] * weight
+            totals['Score'] += stat['Score'] * weight
+            totals['Win'] += stat['Win'] * weight
+            totals['Weight'] += weight
+
+        return totals
+
+    def add_game(self, current):
+        self.team_stats_average[current['HID']].append({
+            'Date': current['Date'],
+            'FieldGoalsMade': current['HFGM'],
+            '3PFieldGoalsMade': current['HFG3M'],
+            'FieldGoalAttempts': current['HFGA'],
+            'Turnovers': current['HTOV'],
+            'OffensiveRebounds': current['HORB'],
+            'OpponentsDefensiveRebounds': current['ADRB'],
+            'FreeThrowAttempts': current['HFTA'],
+            'Score': current['HSC'],
+            'Win': current['H']
+        })
+        self.team_stats_average[current['AID']].append({
+            'Date': current['Date'],
+            'FieldGoalsMade': current['AFGM'],
+            '3PFieldGoalsMade': current['AFG3M'],
+            'FieldGoalAttempts': current['AFGA'],
+            'Turnovers': current['ATOV'],
+            'OffensiveRebounds': current['AORB'],
+            'OpponentsDefensiveRebounds': current['ADRB'],
+            'FreeThrowAttempts': current['AFTA'],
+            'Score': current['ASC'],
+            'Win': current['A']
+        })
+        # Opponent
+        self.opponent_stats_average[current['AID']].append({
+            'Date': current['Date'],
+            'FieldGoalsMade': current['HFGM'],
+            '3PFieldGoalsMade': current['HFG3M'],
+            'FieldGoalAttempts': current['HFGA'],
+            'Turnovers': current['HTOV'],
+            'OffensiveRebounds': current['HORB'],
+            'OpponentsDefensiveRebounds': current['ADRB'],
+            'FreeThrowAttempts': current['HFTA'],
+            'Score': current['HSC'],
+            'Win': current['H']
+        })
+        self.opponent_stats_average[current['HID']].append({
+            'Date': current['Date'],
+            'FieldGoalsMade': current['AFGM'],
+            '3PFieldGoalsMade': current['AFG3M'],
+            'FieldGoalAttempts': current['AFGA'],
+            'Turnovers': current['ATOV'],
+            'OffensiveRebounds': current['AORB'],
+            'OpponentsDefensiveRebounds': current['ADRB'],
+            'FreeThrowAttempts': current['AFTA'],
+            'Score': current['ASC'],
+            'Win': current['A']
+        })
+
+        self.cache = {}
+
+    def get_input_data(self, date, team_id):
+        cache_key = (date, team_id)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        if len(self.team_stats_average[team_id]) <= 5:
+            return None
+
+        stats = self._get_stats(date, self.team_stats_average[team_id])
+        opp_stats = self._get_stats(date, self.opponent_stats_average[team_id])
+
+        result = [
+            (stats['FieldGoalsMade'] + 0.5 * stats['3PFieldGoalsMade']) / stats['FieldGoalAttempts'],
+            stats['Turnovers'] / (stats['FieldGoalAttempts'] + 0.44 * stats['FreeThrowAttempts'] + stats['Turnovers']),
+            stats['OffensiveRebounds'] / (stats['OffensiveRebounds'] + stats['OpponentsDefensiveRebounds']),
+            stats['FreeThrowAttempts'] / stats['FieldGoalAttempts'],
+            stats['Score'] / stats['Weight'],
+            (opp_stats['FieldGoalsMade'] + 0.5 * opp_stats['3PFieldGoalsMade']) / opp_stats['FieldGoalAttempts'],
+            opp_stats['Turnovers'] / (opp_stats['FieldGoalAttempts'] + 0.44 * opp_stats['FreeThrowAttempts'] + opp_stats['Turnovers']),
+            opp_stats['OffensiveRebounds'] / (opp_stats['OffensiveRebounds'] + opp_stats['OpponentsDefensiveRebounds']),
+            opp_stats['FreeThrowAttempts'] / opp_stats['FieldGoalAttempts'],
+            opp_stats['Score'] / opp_stats['Weight']
+        ]
+
+        self.cache[cache_key] = result
+
+        return result
+
 total_games = len(games_df)
+
+ff_model = FourFactor()
 
 for index, current in games_df.iterrows():
     season = current['Season']
@@ -65,14 +189,24 @@ for index, current in games_df.iterrows():
                 c_player_data = []
 
                 if pid != -1 and pid in player_data:
-                    c_player_data = copy.deepcopy(player_data[pid][-50:])
+                    c_player_data = copy.deepcopy(player_data[pid][-30:])
                     c_player_data.reverse()
 
-                while len(c_player_data) < 50:
+                while len(c_player_data) < 30:
                     c_player_data.append([0] * 17)
 
                 for i in range(len(c_player_data)):
                     c_player_data[i][0] = round(c_player_data[i][0] * (0.96 ** i), 2)
+
+                    if c_player_data[i][0] > 0:
+                        vals = ff_model.get_input_data(current['Date'], away_id)
+                        if vals is not None:
+                            c_player_data[i].append(1)
+                            c_player_data[i].extend(vals)
+                        else:
+                            c_player_data[i].extend([0] * 11)
+                    else:
+                        c_player_data[i].extend([0] * 11)
 
                 c_home_inputs.append(c_player_data)
                 c_home_playtimes.append(mins / home_total_mins)
@@ -81,14 +215,24 @@ for index, current in games_df.iterrows():
                 c_player_data = []
 
                 if pid != -1 and pid in player_data:
-                    c_player_data = copy.deepcopy(player_data[pid][-50:])
+                    c_player_data = copy.deepcopy(player_data[pid][-30:])
                     c_player_data.reverse()
 
-                while len(c_player_data) < 50:
+                while len(c_player_data) < 30:
                     c_player_data.append([0] * 17)
 
                 for i in range(len(c_player_data)):
                     c_player_data[i][0] = round(c_player_data[i][0] * (0.96 ** i), 2)
+
+                    if c_player_data[i][0] > 0:
+                        vals = ff_model.get_input_data(current['Date'], home_id)
+                        if vals is not None:
+                            c_player_data[i].append(1)
+                            c_player_data[i].extend(vals)
+                        else:
+                            c_player_data[i].extend([0] * 11)
+                    else:
+                        c_player_data[i].extend([0] * 11)
 
                 c_away_inputs.append(c_player_data)
                 c_away_playtimes.append(mins / away_total_mins)
@@ -167,6 +311,8 @@ for index, current in games_df.iterrows():
         if not any(math.isnan(x) for x in data['inputs']):
             player_data[data['pid']].append([data['mins'], *data['inputs']])
 
+    ff_model.add_game(current)
+
     if (index + 1) % (total_games // 1000) == 0:
         progress = (index + 1) / total_games * 100
         print(f'Progress: {progress:.1f}%')
@@ -174,10 +320,10 @@ for index, current in games_df.iterrows():
 with open('temp/keys.json', 'w') as json_file:
     json.dump(keys, json_file)
 
-np.save('temp/nn_home_inputs.npy', np.array(home_inputs))
-np.save('temp/nn_away_inputs.npy', np.array(away_inputs))
-np.save('temp/nn_home_playtimes.npy', np.array(home_playtimes))
-np.save('temp/nn_away_playtimes.npy', np.array(away_playtimes))
+np.save('temp/nn_home_inputs.npy', np.array(home_inputs).astype(np.float32))
+np.save('temp/nn_away_inputs.npy', np.array(away_inputs).astype(np.float32))
+np.save('temp/nn_home_playtimes.npy', np.array(home_playtimes).astype(np.float32))
+np.save('temp/nn_away_playtimes.npy', np.array(away_playtimes).astype(np.float32))
 np.save('temp/nn_outputs.npy', np.array(outputs))
 
 print('Done')
