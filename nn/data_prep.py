@@ -3,11 +3,13 @@ import json
 import pandas as pd
 import numpy as np
 from collections import defaultdict
+import copy
 
 players_df = pd.read_csv('data/players.csv')
 games_df = pd.read_csv('data/games.csv')
 
-player_data = {}
+keys = []
+player_data = defaultdict(list)
 home_inputs = []
 away_inputs = []
 home_playtimes = []
@@ -63,10 +65,14 @@ for index, current in games_df.iterrows():
                 c_player_data = []
 
                 if pid != -1 and pid in player_data:
-                    c_player_data = player_data[pid][-50:]
+                    c_player_data = copy.deepcopy(player_data[pid][-50:])
+                    c_player_data.reverse()
 
                 while len(c_player_data) < 50:
                     c_player_data.append([0] * 16)
+
+                for i in range(len(c_player_data)):
+                    c_player_data[i][0] = round(c_player_data[i][0] * (0.96 ** i), 2)
 
                 c_home_inputs.append(c_player_data)
                 c_home_playtimes.append(mins / home_total_mins)
@@ -75,14 +81,19 @@ for index, current in games_df.iterrows():
                 c_player_data = []
 
                 if pid != -1 and pid in player_data:
-                    c_player_data = player_data[pid][-50:]
+                    c_player_data = copy.deepcopy(player_data[pid][-50:])
+                    c_player_data.reverse()
 
                 while len(c_player_data) < 50:
                     c_player_data.append([0] * 16)
 
+                for i in range(len(c_player_data)):
+                    c_player_data[i][0] = round(c_player_data[i][0] * (0.96 ** i), 2)
+
                 c_away_inputs.append(c_player_data)
                 c_away_playtimes.append(mins / away_total_mins)
 
+            keys.append(index)
             home_inputs.append(c_home_inputs)
             home_playtimes.append(c_home_playtimes)
             away_inputs.append(c_away_inputs)
@@ -152,14 +163,14 @@ for index, current in games_df.iterrows():
 
     for data in [*mapped_home_players, *mapped_away_players]:
         if not any(math.isnan(x) for x in data['inputs']):
-            if data['pid'] not in player_data:
-                player_data[data['pid']] = []
-
             player_data[data['pid']].append([data['mins'], *data['inputs']])
 
     if (index + 1) % (total_games // 1000) == 0:
         progress = (index + 1) / total_games * 100
-        print(f"Progress: {progress:.1f}%")
+        print(f'Progress: {progress:.1f}%')
+
+with open('temp/keys.json', 'w') as json_file:
+    json.dump(keys, json_file)
 
 np.save('temp/nn_home_inputs.npy', np.array(home_inputs))
 np.save('temp/nn_away_inputs.npy', np.array(away_inputs))
