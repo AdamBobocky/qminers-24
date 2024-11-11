@@ -69,7 +69,7 @@ for index, current in games_df.iterrows():
                     c_player_data.reverse()
 
                 while len(c_player_data) < 50:
-                    c_player_data.append([0] * 16)
+                    c_player_data.append([0] * 17)
 
                 for i in range(len(c_player_data)):
                     c_player_data[i][0] = round(c_player_data[i][0] * (0.96 ** i), 2)
@@ -85,7 +85,7 @@ for index, current in games_df.iterrows():
                     c_player_data.reverse()
 
                 while len(c_player_data) < 50:
-                    c_player_data.append([0] * 16)
+                    c_player_data.append([0] * 17)
 
                 for i in range(len(c_player_data)):
                     c_player_data[i][0] = round(c_player_data[i][0] * (0.96 ** i), 2)
@@ -98,7 +98,7 @@ for index, current in games_df.iterrows():
             home_playtimes.append(c_home_playtimes)
             away_inputs.append(c_away_inputs)
             away_playtimes.append(c_away_playtimes)
-            outputs.append(home_score - away_score)
+            outputs.append(abs(home_score - away_score) ** 0.7 * (1 if home_score > away_score else -1))
 
     # Log data
     game_players = players_df[(players_df['Game'] == index) & (players_df['MIN'] >= 3)]
@@ -123,6 +123,7 @@ for index, current in games_df.iterrows():
         'mins': row['MIN'],
         'inputs': [
             1,                          # Whether player is part of home team
+            row['MIN'],
             row['PTS'] / row['MIN'],    # Points
             row['ORB'] / row['MIN'],    # Offensive rebounds
             row['DRB'] / row['MIN'],    # Defensive rebounds
@@ -144,6 +145,7 @@ for index, current in games_df.iterrows():
         'mins': row['MIN'],
         'inputs': [
             0,                          # Whether player is part of home team
+            row['MIN'],
             row['PTS'] / row['MIN'],    # Points
             row['ORB'] / row['MIN'],    # Offensive rebounds
             row['DRB'] / row['MIN'],    # Defensive rebounds

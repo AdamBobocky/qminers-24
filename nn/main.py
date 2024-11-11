@@ -18,11 +18,11 @@ class PlayerRatingModel(nn.Module):
         #     nn.Linear(15, 1)
         # )
         self.layers = nn.Sequential(
-            nn.Linear(15, 32),
+            nn.Linear(16, 8),
             nn.ReLU(),
-            nn.Linear(32, 16),
+            nn.Linear(8, 4),
             nn.ReLU(),
-            nn.Linear(16, 1)
+            nn.Linear(4, 1)
         )
 
     def forward(self, player_stats, game_weight):
@@ -37,7 +37,7 @@ class GameRatingModel(nn.Module):
 
         # Instantiate the player rating model
         self.player_model = PlayerRatingModel()
-        self.home_field_advantage = nn.Parameter(torch.tensor(3.0))
+        self.home_field_advantage = nn.Parameter(torch.tensor(4.5))
 
     def forward(self, home_team_stats, away_team_stats, home_game_weights, away_game_weights,
                 home_play_times, away_play_times):
@@ -50,8 +50,8 @@ class GameRatingModel(nn.Module):
         home_team_rating = torch.sum(home_ratings, axis=1)
         away_team_rating = torch.sum(away_ratings, axis=1)
 
-        print(home_team_stats.shape, home_outputs.shape, home_ratings.shape, home_team_rating.shape)
-        #     [64, 15, 50, 15]       [64, 15]            [64, 15]            [64]
+        # print(home_team_stats.shape, home_outputs.shape, home_ratings.shape, home_team_rating.shape)
+        #       [64, 15, 50, 15]       [64, 15]            [64, 15]            [64]
 
         score_diff = home_team_rating - away_team_rating
 
@@ -120,7 +120,6 @@ np_true_score_diff = np.load('temp/nn_outputs.npy')
 home_team_stats = torch.tensor(np_home_team_stats[:, :, :, 1:], dtype=torch.float32)
 away_team_stats = torch.tensor(np_away_team_stats[:, :, :, 1:], dtype=torch.float32)
 home_game_weights = torch.tensor(np_home_team_stats[:, :, :, 0], dtype=torch.float32)
-print(np_home_team_stats[:, :, :, 0])
 away_game_weights = torch.tensor(np_away_team_stats[:, :, :, 0], dtype=torch.float32)
 home_play_times = torch.tensor(np_home_play_times, dtype=torch.float32)
 away_play_times = torch.tensor(np_away_play_times, dtype=torch.float32)
@@ -140,14 +139,13 @@ train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
 val_loader = DataLoader(val_data, batch_size=64, shuffle=False)
 
 # Training loop
-num_epochs = 100
+num_epochs = 50
 for epoch in range(num_epochs):
     if epoch > 4:
         enabled_log = True
 
     train_loss, train_accuracy = train(model, train_loader, optimizer, loss_fn, device)
     val_loss, val_predictions = validate(model, val_loader, loss_fn, device)
-    # print(f"Epoch {epoch+1} / {num_epochs}, Train Loss: {train_loss:.4f}, {train_accuracy:.4f}")
     print(f'Epoch {epoch+1} / {num_epochs}, Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.4f}, Val Loss: {val_loss:.4f}')
 
 validation_results = {key: float(pred) for key, pred in zip(keys[split_index:], val_predictions)}
