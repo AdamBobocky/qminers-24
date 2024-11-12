@@ -5,6 +5,7 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 
 from pythagorean.model import Pythagorean
+from four_factor.model import FourFactor
 
 class Model:
     def __init__(self, debug_mode=False):
@@ -13,7 +14,8 @@ class Model:
         # Hyperparameters
         self.ensamble_required_n = 2000
         self.model_list = [
-            Pythagorean()
+            Pythagorean(),
+            FourFactor()
         ]
         # End
 
@@ -167,7 +169,7 @@ class Model:
 
             if input_arr is not None and len(self.past_pred) >= self.ensamble_required_n:
                 if self.ensamble_retrain <= 0:
-                    self.ensamble_retrain += 200
+                    self.ensamble_retrain = 200
                     np_array = np.array(self.past_pred)
                     sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
                     self.ensamble = LogisticRegression(max_iter=10000)

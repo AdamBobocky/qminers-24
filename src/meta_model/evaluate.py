@@ -14,7 +14,7 @@ games['Open'] = pd.to_datetime(games['Open'])
 players = pd.read_csv('./data/players.csv', index_col=0)
 players['Date'] = pd.to_datetime(players['Date'])
 
-env = Environment(games, players, Model(debug_mode=True), init_bankroll=1000, min_bet=5, max_bet=100)
+env = Environment(games, players, Model(debug_mode=True), init_bankroll=1000, min_bet=5, max_bet=100, start_date=pd.Timestamp('1985-01-01'))
 
 evaluation = env.run()
 
