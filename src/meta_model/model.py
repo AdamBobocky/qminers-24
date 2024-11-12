@@ -7,6 +7,7 @@ from sklearn.linear_model import LogisticRegression
 from pythagorean.model import Pythagorean
 from four_factor.model import FourFactor
 from elo.model import Elo
+from gradient_descent.model import GradientDescent
 
 class Model:
     def __init__(self, debug_mode=False):
@@ -17,11 +18,14 @@ class Model:
         self.model_list = [
             Pythagorean(),
             FourFactor(),
-            Elo()
+            Elo(),
+            GradientDescent()
         ]
         # End
 
         self.prediction_map = {}
+        self.input_map = {}
+        self.coef_map = {}
         self.past_pred = []
         self.ensamble = None
         self.ensamble_retrain = 0
@@ -100,7 +104,9 @@ class Model:
                 'mkt_pred': mkt_pred,
                 'odds_home': float(odds_home),
                 'odds_away': float(odds_away),
-                'outcome': int(home_win)
+                'outcome': int(home_win),
+                'inputs': self.input_map[idx],
+                'coefs': self.coef_map[idx]
             })
 
     def _game_increment(self, idx, current):
@@ -182,12 +188,14 @@ class Model:
                 pred = self.ensamble.predict_proba(np.array([input_arr]))[0, 1]
 
                 self.prediction_map[i] = pred
+                self.input_map[i] = input_arr
+                self.coef_map[i] = [self.ensamble.intercept_.tolist(), *self.ensamble.coef_.tolist()]
 
                 odds_home = current['OddsH']
                 odds_away = current['OddsA']
 
-                min_home_odds = (1 / pred - 1) * 1.2 + 1 + 0.1
-                min_away_odds = (1 / (1 - pred) - 1) * 1.2 + 1 + 0.1
+                min_home_odds = (1 / pred - 1) * 1.1 + 1 + 0.03
+                min_away_odds = (1 / (1 - pred) - 1) * 1.1 + 1 + 0.03
 
                 if odds_home >= min_home_odds:
                     bets.at[i, 'BetH'] = min_bet
