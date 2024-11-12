@@ -20,14 +20,12 @@ class PlayerRatingModel(nn.Module):
         self.layers = nn.Sequential(
             nn.Linear(27, 12),
             nn.ReLU(),
-            nn.Linear(12, 6),
-            nn.ReLU(),
-            nn.Linear(6, 1)
+            nn.Linear(12, 2)
         )
 
     def forward(self, player_stats, game_weight):
-        player_output = self.layers(player_stats).squeeze()
-        weighted_output = player_output * game_weight
+        player_output = self.layers(player_stats)
+        weighted_output = player_output * game_weight.unsqueeze()
 
         return torch.sum(weighted_output, axis=2) / (torch.sum(game_weight, axis=2) + 0.001)
 
@@ -50,7 +48,7 @@ class GameRatingModel(nn.Module):
         home_team_rating = torch.sum(home_ratings, axis=1)
         away_team_rating = torch.sum(away_ratings, axis=1)
 
-        # print(home_team_stats.shape, home_outputs.shape, home_ratings.shape, home_team_rating.shape)
+        print(home_team_stats.shape, home_outputs.shape, home_ratings.shape, home_team_rating.shape)
         #       [64, 15, 50, 15]       [64, 15]            [64, 15]            [64]
 
         score_diff = home_team_rating - away_team_rating
@@ -108,7 +106,7 @@ def validate(model, dataloader, loss_fn, device):
 # Training setup
 device = torch.device('cpu')
 model = GameRatingModel().to(device)
-optimizer = optim.Adam(model.parameters(), lr=0.004)
+optimizer = optim.Adam(model.parameters(), lr=0.002)
 loss_fn = nn.MSELoss()
 
 np_home_team_stats = np.load('temp/nn_home_inputs.npy')
@@ -126,7 +124,7 @@ away_play_times = torch.tensor(np_away_play_times, dtype=torch.float32)
 true_score_diff = torch.tensor(np_true_score_diff, dtype=torch.float32)
 
 # Prepare DataLoader
-split_index = int(0.8 * len(home_team_stats))
+split_index = int(0.7 * len(home_team_stats))
 train_data = TensorDataset(home_team_stats[:split_index], away_team_stats[:split_index],
                            home_game_weights[:split_index], away_game_weights[:split_index],
                            home_play_times[:split_index], away_play_times[:split_index],
@@ -139,7 +137,7 @@ train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
 val_loader = DataLoader(val_data, batch_size=64, shuffle=False)
 
 # Training loop
-num_epochs = 50
+num_epochs = 500
 for epoch in range(num_epochs):
     if epoch > 4:
         enabled_log = True

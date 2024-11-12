@@ -9,10 +9,7 @@ from sklearn.preprocessing import StandardScaler
 players_df = pd.read_csv('data/players.csv')
 games_df = pd.read_csv('data/games.csv')
 
-# Initialize the dictionary to hold players' next game outcomes
-win_next_dict = {}
-
-# Prepare lists to hold training data
+player_inputs = {}
 inputs = []
 outputs = []
 
@@ -32,7 +29,7 @@ for index, row in players_df[::-1].iterrows():
     if this_player in win_next_dict and row['MIN'] > 0:
         # Collect the input features for training
         input_data = [
-            (1 if player_is_home_team else 0) / row['MIN'], # Whether player is part of home team
+            (1 if player_is_home_team else 0), # Whether player is part of home team
             row['PTS'] / row['MIN'],  # Points
             row['ORB'] / row['MIN'],  # Offensive rebounds
             row['DRB'] / row['MIN'],  # Defensive rebounds
@@ -96,6 +93,3 @@ print(f"Accuracy: {accuracy}")
 # For Mean Squared Error (regression)
 mse = mean_squared_error(y_pred, y_test)
 print(f"Mean Squared Error: {mse}")
-
-# TODO: Group by by team and gameid, export keyed predictions to ensamble with my existing model
-# See how accuracies improve when done teamH - teamA

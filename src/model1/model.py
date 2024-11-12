@@ -161,7 +161,7 @@ class Model:
             if i in self.xgb_prediction_map:
                 xgb_factor = self.xgb_prediction_map[i]
                 four_factor = self.get_team_four_factor(season, home_id) - self.get_team_four_factor(season, away_id)
-                self.ensamble_training_frames.append([xgb_factor, elo_factor, four_factor, home_win])
+                self.ensamble_training_frames.append([elo_factor, xgb_factor, four_factor, home_win])
 
             if i in self.prediction_map:
                 self.metrics['my_mse'] += (self.prediction_map[i] - home_win) ** 2
@@ -227,7 +227,7 @@ class Model:
 
     def fit_ensamble(self):
         np_data = np.array(self.ensamble_training_frames)[-2000:]
-        X = np_data[:, :3]
+        X = np_data[:, :1]
         y = np_data[:, 3]
 
         self.lr = LogisticRegression()
@@ -317,6 +317,7 @@ class Model:
         self.lr_retrain_countdown -= 1
 
         ensamble_pred = self.lr.predict_proba(np.array([xgb_factor, elo_factor, four_factor]).reshape(1, -1))[0, 1]
+        # ensamble_pred = self.lr.predict_proba(np.array([elo_factor]).reshape(1, -1))[0, 1]
 
         self.prediction_map[game_id] = ensamble_pred
 

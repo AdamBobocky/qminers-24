@@ -317,7 +317,7 @@ class Model:
             return None
 
         return [
-            self.el_model.predict(home_id, away_id),
+            # self.el_model.predict(home_id, away_id),
             self.gd_model.predict(self.my_team_id[home_id], self.my_team_id[away_id]),
             *home_ff,
             *away_ff
@@ -374,7 +374,7 @@ class Model:
                 self.season_start = current['Date']
                 self.gd_model.new_season()
 
-            if self.countdown <= 0:
+            if self.countdown <= 0 and int(str(current['Date'])[0:4]) >= 1990:
                 if last_fit is None or last_fit != current['Date']:
                     last_fit = current['Date']
                     self.gd_model.fit()
