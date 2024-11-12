@@ -6,6 +6,7 @@ from sklearn.linear_model import LogisticRegression
 
 from pythagorean.model import Pythagorean
 from four_factor.model import FourFactor
+from elo.model import Elo
 
 class Model:
     def __init__(self, debug_mode=False):
@@ -15,7 +16,8 @@ class Model:
         self.ensamble_required_n = 2000
         self.model_list = [
             Pythagorean(),
-            FourFactor()
+            FourFactor(),
+            Elo()
         ]
         # End
 

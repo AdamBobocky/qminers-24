@@ -1,0 +1,19 @@
+# MetaModel
+
+## Description
+
+Ensamble of all sub-models.
+
+## Results
+
+```
+Opps: 21046 Bets: 953 Volume: 4765 Avg odds: 5.282256471434317 Exp avg P&L: 0.25051307107398624
+my_ba     0.6723070972732547 10342
+mkt_ba    0.6697930767743183 10342
+my_mse    0.207429316021985 10342
+mkt_mse   0.20741011875377038 10342
+ba corr   0.9501063624057242
+corr r    0.9802783731104069
+corr r2   0.9609456887879861
+1999-06-25 00:00:00 Bankroll: 1300.99
+```
