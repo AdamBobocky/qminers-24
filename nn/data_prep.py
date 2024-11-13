@@ -11,137 +11,91 @@ games_df = pd.read_csv('data/games.csv')
 
 keys = []
 player_data = defaultdict(list)
+team_rosters = {}
+
 home_inputs = []
 away_inputs = []
 home_playtimes = []
 away_playtimes = []
 outputs = []
-team_rosters = {}
 
-class FourFactor:
+class NateSilverElo:
     def __init__(self):
-        self.team_stats_average = defaultdict(list)
-        self.opponent_stats_average = defaultdict(list)
-        self.cache = {}
+        self.elo_map = defaultdict(float)
+        self.last_season = -1
 
-    def _get_stats(self, date, stats):
-        totals = {
-            'FieldGoalsMade': 0,
-            '3PFieldGoalsMade': 0,
-            'FieldGoalAttempts': 0,
-            'Turnovers': 0,
-            'OffensiveRebounds': 0,
-            'OpponentsDefensiveRebounds': 0,
-            'FreeThrowAttempts': 0,
-            'Score': 0,
-            'Win': 0,
-            'Weight': 0
-        }
+    def _new_season(self):
+        for key in self.elo_map:
+            self.elo_map[key] *= 0.75
 
-        date = datetime.strptime(date, '%Y-%m-%d')
-
-        # Iterate over each dictionary in the list
-        for stat in stats:
-            weight = 0.994 ** abs((date - datetime.strptime(stat['Date'], '%Y-%m-%d')).days)
-
-            # Multiply each relevant field by the weight and add to totals
-            totals['FieldGoalsMade'] += stat['FieldGoalsMade'] * weight
-            totals['3PFieldGoalsMade'] += stat['3PFieldGoalsMade'] * weight
-            totals['FieldGoalAttempts'] += stat['FieldGoalAttempts'] * weight
-            totals['Turnovers'] += stat['Turnovers'] * weight
-            totals['OffensiveRebounds'] += stat['OffensiveRebounds'] * weight
-            totals['OpponentsDefensiveRebounds'] += stat['OpponentsDefensiveRebounds'] * weight
-            totals['FreeThrowAttempts'] += stat['FreeThrowAttempts'] * weight
-            totals['Score'] += stat['Score'] * weight
-            totals['Win'] += stat['Win'] * weight
-            totals['Weight'] += weight
-
-        return totals
+    def _win_probability(self, x):
+        return 1 / (1 + (math.exp(-x / 175)))
 
     def add_game(self, current):
-        self.team_stats_average[current['HID']].append({
-            'Date': current['Date'],
-            'FieldGoalsMade': current['HFGM'],
-            '3PFieldGoalsMade': current['HFG3M'],
-            'FieldGoalAttempts': current['HFGA'],
-            'Turnovers': current['HTOV'],
-            'OffensiveRebounds': current['HORB'],
-            'OpponentsDefensiveRebounds': current['ADRB'],
-            'FreeThrowAttempts': current['HFTA'],
-            'Score': current['HSC'],
-            'Win': current['H']
-        })
-        self.team_stats_average[current['AID']].append({
-            'Date': current['Date'],
-            'FieldGoalsMade': current['AFGM'],
-            '3PFieldGoalsMade': current['AFG3M'],
-            'FieldGoalAttempts': current['AFGA'],
-            'Turnovers': current['ATOV'],
-            'OffensiveRebounds': current['AORB'],
-            'OpponentsDefensiveRebounds': current['ADRB'],
-            'FreeThrowAttempts': current['AFTA'],
-            'Score': current['ASC'],
-            'Win': current['A']
-        })
-        # Opponent
-        self.opponent_stats_average[current['AID']].append({
-            'Date': current['Date'],
-            'FieldGoalsMade': current['HFGM'],
-            '3PFieldGoalsMade': current['HFG3M'],
-            'FieldGoalAttempts': current['HFGA'],
-            'Turnovers': current['HTOV'],
-            'OffensiveRebounds': current['HORB'],
-            'OpponentsDefensiveRebounds': current['ADRB'],
-            'FreeThrowAttempts': current['HFTA'],
-            'Score': current['HSC'],
-            'Win': current['H']
-        })
-        self.opponent_stats_average[current['HID']].append({
-            'Date': current['Date'],
-            'FieldGoalsMade': current['AFGM'],
-            '3PFieldGoalsMade': current['AFG3M'],
-            'FieldGoalAttempts': current['AFGA'],
-            'Turnovers': current['ATOV'],
-            'OffensiveRebounds': current['AORB'],
-            'OpponentsDefensiveRebounds': current['ADRB'],
-            'FreeThrowAttempts': current['AFTA'],
-            'Score': current['ASC'],
-            'Win': current['A']
-        })
+        season = current['Season']
+        home_id = current['HID']
+        away_id = current['AID']
+        home_score = current['HSC']
+        away_score = current['ASC']
 
-        self.cache = {}
+        if season > self.last_season:
+            self.last_season = season
+            self._new_season()
 
-    def get_input_data(self, date, team_id):
-        cache_key = (date, team_id)
-        if cache_key in self.cache:
-            return self.cache[cache_key]
+        home_prediction = self._win_probability(self.elo_map[home_id] + 100 - self.elo_map[away_id])
+        away_prediction = 1 - home_prediction
 
-        if len(self.team_stats_average[team_id]) <= 5:
-            return None
+        k_factor = self.get_k_factor(home_score - away_score, self.elo_map[home_id] + 100, self.elo_map[away_id])
 
-        stats = self._get_stats(date, self.team_stats_average[team_id])
-        opp_stats = self._get_stats(date, self.opponent_stats_average[team_id])
+        self.elo_map[home_id] += k_factor * (current['H'] - home_prediction)
+        self.elo_map[away_id] += k_factor * (current['A'] - away_prediction)
 
-        result = [
-            (stats['FieldGoalsMade'] + 0.5 * stats['3PFieldGoalsMade']) / stats['FieldGoalAttempts'],
-            stats['Turnovers'] / (stats['FieldGoalAttempts'] + 0.44 * stats['FreeThrowAttempts'] + stats['Turnovers']),
-            stats['OffensiveRebounds'] / (stats['OffensiveRebounds'] + stats['OpponentsDefensiveRebounds']),
-            stats['FreeThrowAttempts'] / stats['FieldGoalAttempts'],
-            stats['Score'] / stats['Weight'],
-            (opp_stats['FieldGoalsMade'] + 0.5 * opp_stats['3PFieldGoalsMade']) / opp_stats['FieldGoalAttempts'],
-            opp_stats['Turnovers'] / (opp_stats['FieldGoalAttempts'] + 0.44 * opp_stats['FreeThrowAttempts'] + opp_stats['Turnovers']),
-            opp_stats['OffensiveRebounds'] / (opp_stats['OffensiveRebounds'] + opp_stats['OpponentsDefensiveRebounds']),
-            opp_stats['FreeThrowAttempts'] / opp_stats['FieldGoalAttempts'],
-            opp_stats['Score'] / opp_stats['Weight']
-        ]
+    def get_team_strength(self, team_id, is_home, season):
+        if season > self.last_season:
+            self.last_season = season
+            self._new_season()
 
-        self.cache[cache_key] = result
+        return self.elo_map[home_id] + 100 * (0.5 if is_home else -0.5)
 
-        return result
+    def get_k_factor(self, score_difference, elo_home, elo_away):
+        if score_difference > 0:
+            return 20 * (score_difference + 3) ** 0.8 / (7.5 + 0.006 * (elo_home - elo_away))
+        else:
+            return 20 * (-score_difference + 3) ** 0.8 / (7.5 + 0.006 * (elo_away - elo_home))
 
 total_games = len(games_df)
 
-ff_model = FourFactor()
+elo = NateSilverElo()
+
+INPUTS_DIM = 21
+
+def row_to_inputs(row, home, opponent_id, season):
+    return [
+        elo.get_team_strength(opponent_id, home, season) / 100,
+        season / 10,
+        home,                          # Whether player is part of home team
+        row['MIN'],
+        row['PTS'] / row['MIN'],    # Points
+        row['ORB'] / row['MIN'],    # Offensive rebounds
+
+        row['DRB'] / row['MIN'],    # Defensive rebounds
+        row['AST'] / row['MIN'],    # Assists
+        row['STL'] / row['MIN'],    # Steals
+        row['BLK'] / row['MIN'],    # Blocks
+        row['FGA'] / row['MIN'],    # Field goal attempts
+
+        row['FTA'] / row['MIN'],    # Free throw attempts
+        row['TOV'] / row['MIN'],    # Turnovers
+        row['PF'] / row['MIN'],     # Personal fouls
+        row['FG3M'] / (row['FG3A'] + 0.00001),
+        row['FTM'] / (row['FTA'] + 0.00001),
+
+        (row['FGM'] + 0.5 * row['FG3M']) / (row['FGA'] + 0.00001),
+        row['TOV'] / (row['FGA'] + 0.44 * row['FTA'] + row['TOV'] + 0.00001),
+        row['ORB'] / (row['ORB'] + row['DRB'] + 0.00001),
+        row['FTA'] / (row['FGA'] + 0.00001),
+        row['PTS'] / (2 * row['FGA'] + 0.44 * row['FTA'] + 0.00001)    # TS%
+    ]
 
 for index, current in games_df.iterrows():
     season = current['Season']
@@ -149,6 +103,7 @@ for index, current in games_df.iterrows():
     away_id = current['AID']
     home_score = current['HSC']
     away_score = current['ASC']
+    date = datetime.strptime(current['Date'], '%Y-%m-%d')
 
     # Make prediction
     if season in team_rosters and home_id in team_rosters[season] and away_id in team_rosters[season] and len(team_rosters[season][home_id]) >= 5 and len(team_rosters[season][away_id]) >= 5:
@@ -189,24 +144,15 @@ for index, current in games_df.iterrows():
                 c_player_data = []
 
                 if pid != -1 and pid in player_data:
-                    c_player_data = copy.deepcopy(player_data[pid][-30:])
-                    c_player_data.reverse()
-
-                while len(c_player_data) < 30:
-                    c_player_data.append([0] * 17)
+                    c_player_data = copy.deepcopy(player_data[pid][-40:])
 
                 for i in range(len(c_player_data)):
-                    c_player_data[i][0] = round(c_player_data[i][0] * (0.96 ** i), 2)
+                    point_date, point_mins = c_player_data[i][0]
+                    time_weight = 0.9955 ** abs((date - point_date).days)
+                    c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
-                    if c_player_data[i][0] > 0:
-                        vals = ff_model.get_input_data(current['Date'], away_id)
-                        if vals is not None:
-                            c_player_data[i].append(1)
-                            c_player_data[i].extend(vals)
-                        else:
-                            c_player_data[i].extend([0] * 11)
-                    else:
-                        c_player_data[i].extend([0] * 11)
+                while len(c_player_data) < 40:
+                    c_player_data.append([0] * (INPUTS_DIM + 1))
 
                 c_home_inputs.append(c_player_data)
                 c_home_playtimes.append(mins / home_total_mins)
@@ -215,24 +161,15 @@ for index, current in games_df.iterrows():
                 c_player_data = []
 
                 if pid != -1 and pid in player_data:
-                    c_player_data = copy.deepcopy(player_data[pid][-30:])
-                    c_player_data.reverse()
-
-                while len(c_player_data) < 30:
-                    c_player_data.append([0] * 17)
+                    c_player_data = copy.deepcopy(player_data[pid][-40:])
 
                 for i in range(len(c_player_data)):
-                    c_player_data[i][0] = round(c_player_data[i][0] * (0.96 ** i), 2)
+                    point_date, point_mins = c_player_data[i][0]
+                    time_weight = 0.9955 ** abs((date - point_date).days)
+                    c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
-                    if c_player_data[i][0] > 0:
-                        vals = ff_model.get_input_data(current['Date'], home_id)
-                        if vals is not None:
-                            c_player_data[i].append(1)
-                            c_player_data[i].extend(vals)
-                        else:
-                            c_player_data[i].extend([0] * 11)
-                    else:
-                        c_player_data[i].extend([0] * 11)
+                while len(c_player_data) < 40:
+                    c_player_data.append([0] * (INPUTS_DIM + 1))
 
                 c_away_inputs.append(c_player_data)
                 c_away_playtimes.append(mins / away_total_mins)
@@ -242,7 +179,7 @@ for index, current in games_df.iterrows():
             home_playtimes.append(c_home_playtimes)
             away_inputs.append(c_away_inputs)
             away_playtimes.append(c_away_playtimes)
-            outputs.append(abs(home_score - away_score) ** 0.7 * (1 if home_score > away_score else -1))
+            outputs.append(abs(home_score - away_score) ** 0.8 * (1 if home_score > away_score else -1))
 
     # Log data
     game_players = players_df[(players_df['Game'] == index) & (players_df['MIN'] >= 3)]
@@ -265,53 +202,19 @@ for index, current in games_df.iterrows():
     mapped_home_players = [{
         'pid': row['Player'],
         'mins': row['MIN'],
-        'inputs': [
-            1,                          # Whether player is part of home team
-            row['MIN'],
-            row['PTS'] / row['MIN'],    # Points
-            row['ORB'] / row['MIN'],    # Offensive rebounds
-            row['DRB'] / row['MIN'],    # Defensive rebounds
-            row['AST'] / row['MIN'],    # Assists
-            row['STL'] / row['MIN'],    # Steals
-            row['BLK'] / row['MIN'],    # Blocks
-            row['FGA'] / row['MIN'],    # Field goal attempts
-            row['FTA'] / row['MIN'],    # Free throw attempts
-            row['TOV'] / row['MIN'],    # Turnovers
-            row['PF'] / row['MIN'],     # Personal fouls
-            (row['FGM'] + 0.5 * row['FG3M']) / (row['FGA'] + 0.00001),
-            row['TOV'] / (row['FGA'] + 0.44 * row['FTA'] + row['TOV'] + 0.00001),
-            row['ORB'] / (row['ORB'] + row['DRB'] + 0.00001),
-            row['FTA'] / (row['FGA'] + 0.00001)
-        ]
+        'inputs': row_to_inputs(row, 1, away_id, season)
     } for _, row in home_players.iterrows()]
     mapped_away_players = [{
         'pid': row['Player'],
         'mins': row['MIN'],
-        'inputs': [
-            0,                          # Whether player is part of home team
-            row['MIN'],
-            row['PTS'] / row['MIN'],    # Points
-            row['ORB'] / row['MIN'],    # Offensive rebounds
-            row['DRB'] / row['MIN'],    # Defensive rebounds
-            row['AST'] / row['MIN'],    # Assists
-            row['STL'] / row['MIN'],    # Steals
-            row['BLK'] / row['MIN'],    # Blocks
-            row['FGA'] / row['MIN'],    # Field goal attempts
-            row['FTA'] / row['MIN'],    # Free throw attempts
-            row['TOV'] / row['MIN'],    # Turnovers
-            row['PF'] / row['MIN'],     # Personal fouls
-            (row['FGM'] + 0.5 * row['FG3M']) / (row['FGA'] + 0.00001),
-            row['TOV'] / (row['FGA'] + 0.44 * row['FTA'] + row['TOV'] + 0.00001),
-            row['ORB'] / (row['ORB'] + row['DRB'] + 0.00001),
-            row['FTA'] / (row['FGA'] + 0.00001)
-        ]
+        'inputs': row_to_inputs(row, 0, home_id, season)
     } for _, row in away_players.iterrows()]
 
     for data in [*mapped_home_players, *mapped_away_players]:
         if not any(math.isnan(x) for x in data['inputs']):
-            player_data[data['pid']].append([data['mins'], *data['inputs']])
+            player_data[data['pid']].append([[date, data['mins']], *data['inputs']])
 
-    ff_model.add_game(current)
+    elo.add_game(current)
 
     if (index + 1) % (total_games // 1000) == 0:
         progress = (index + 1) / total_games * 100
@@ -320,8 +223,11 @@ for index, current in games_df.iterrows():
 with open('temp/keys.json', 'w') as json_file:
     json.dump(keys, json_file)
 
-np.save('temp/nn_home_inputs.npy', np.array(home_inputs).astype(np.float32))
-np.save('temp/nn_away_inputs.npy', np.array(away_inputs).astype(np.float32))
+np_array_home_inputs = np.array(home_inputs).astype(np.float32)
+np_array_away_inputs = np.array(away_inputs).astype(np.float32)
+
+np.save('temp/nn_home_inputs.npy', np_array_home_inputs)
+np.save('temp/nn_away_inputs.npy', np_array_away_inputs)
 np.save('temp/nn_home_playtimes.npy', np.array(home_playtimes).astype(np.float32))
 np.save('temp/nn_away_playtimes.npy', np.array(away_playtimes).astype(np.float32))
 np.save('temp/nn_outputs.npy', np.array(outputs))

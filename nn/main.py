@@ -15,13 +15,14 @@ class PlayerRatingModel(nn.Module):
         super(PlayerRatingModel, self).__init__()
 
         # self.layers = nn.Sequential(
-        #     nn.Linear(15, 1)
+        #     nn.Linear(21, 1)
         # )
         self.layers = nn.Sequential(
-            # nn.Linear(27, 12),
-            # nn.ReLU(),
-            # nn.Linear(12, 1)
-            nn.Linear(27, 1)
+            nn.Linear(21, 12),
+            nn.ReLU(),
+            nn.Linear(12, 8),
+            nn.ReLU(),
+            nn.Linear(8, 1)
         )
 
     def forward(self, player_stats, game_weight):
@@ -115,8 +116,9 @@ def validate(model, dataloader, loss_fn, device):
 # Training setup
 device = torch.device('cpu')
 model = GameRatingModel().to(device)
-optimizer = optim.Adam(model.parameters(), lr=0.002)
+optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=2e-5)
 loss_fn = nn.MSELoss()
+val_loss_fn = nn.MSELoss()
 
 np_home_team_stats = np.load('temp/nn_home_inputs.npy')
 np_away_team_stats = np.load('temp/nn_away_inputs.npy')
@@ -146,13 +148,13 @@ train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
 val_loader = DataLoader(val_data, batch_size=64, shuffle=False)
 
 # Training loop
-num_epochs = 50
+num_epochs = 100
 for epoch in range(num_epochs):
     if epoch > 4:
         enabled_log = True
 
     train_loss, train_accuracy = train(model, train_loader, optimizer, loss_fn, device)
-    val_loss, val_accuracy, val_predictions = validate(model, val_loader, loss_fn, device)
+    val_loss, val_accuracy, val_predictions = validate(model, val_loader, val_loss_fn, device)
     print(f'Epoch {epoch+1} / {num_epochs}, train_loss: {train_loss:.4f}, train_accuracy: {train_accuracy:.4f}, val_loss: {val_loss:.4f}, val_accuracy: {val_accuracy:.4f}')
 
 validation_results = {key: float(pred) for key, pred in zip(keys[split_index:], val_predictions)}
