@@ -5,6 +5,8 @@ from datetime import datetime
 
 df = pd.read_csv('data/games.csv')
 
+df['Expectation'] = 1 / df['OddsH'] / (1 / df['OddsH'] + 1 / df['OddsA'])
+
 def sigmoid(x):
     return 1 / (1 + math.exp(-x))
 
@@ -32,6 +34,7 @@ for current in data:
     game = df.loc[int(idx)]
     home_id = game['HID']
     away_id = game['AID']
+    # pred = game['Expectation']
     date = datetime.strptime(current['date'], '%Y-%m-%d %H:%M:%S')
     days = (date - season_start).days
 
@@ -48,10 +51,10 @@ for current in data:
             print(home_days, away_days)
         else:
             adj_pred = inverse_sigmoid(pred)
-            if home_days == 1:  # This is adjustment for when a team played the day before
-                adj_pred -= 0.2 # This is adjustment for when a team played the day before
-            if away_days == 1:  # This is adjustment for when a team played the day before
-                adj_pred += 0.2 # This is adjustment for when a team played the day before
+            # if home_days == 1:  # This is adjustment for when a team played the day before
+            #     adj_pred -= 0.2 # This is adjustment for when a team played the day before
+            # if away_days == 1:  # This is adjustment for when a team played the day before
+            #     adj_pred += 0.2 # This is adjustment for when a team played the day before
             adj_pred = sigmoid(adj_pred)
             rest_data.append([home_days, adj_pred, outcome])
             rest_data.append([away_days, 1 - adj_pred, 1 - outcome])
@@ -63,6 +66,7 @@ stats = {}
 
 # Populate the dictionary
 for key, pred, outcome in rest_data:
+    key = min(4, int(key))
     if key not in stats:
         stats[key] = {'wins': 0, 'pred': 0, 'count': 0}
     stats[key]['wins'] += outcome

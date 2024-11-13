@@ -21,7 +21,7 @@ df['devig_probA'] = 1 / df['OddsA'] / (df['overround'] + 1)
 mse_map = {}
 overrounds = []
 
-for index, row in df[::-1].iterrows():
+for index, row in df.iterrows():
     rounded = round(row['overround'], 2)
     overrounds.append(rounded)
 

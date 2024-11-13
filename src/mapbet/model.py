@@ -19,7 +19,8 @@ predictions = {
         [
             *item['inputs'],
             predictions[item['index']]
-        ] if item['index'] in predictions else None) for item in all_data
+        ] if item['index'] in predictions else None
+    ) for item in all_data
 }
 
 class Model:
@@ -29,6 +30,8 @@ class Model:
         self.pred_list = []
         self.corr_me = []
         self.corr_mkt = []
+
+        self.roi_dist = []
 
         self.metrics = {
             'my_ba': 0,
@@ -65,8 +68,11 @@ class Model:
 
         self.print_metrics()
 
-        with open('data.json', 'w') as json_file:
+        with open('src/mapbet/data.json', 'w') as json_file:
             json.dump(self.pred_list, json_file, indent=2)
+
+        with open('src/mapbet/roi_dist.json', 'w') as json_file:
+            json.dump(self.roi_dist, json_file, indent=2)
 
         min_bet = summary.iloc[0]['Min_bet']
         max_bet = summary.iloc[0]['Max_bet']
@@ -138,6 +144,15 @@ class Model:
 
                     odds_home = current['OddsH']
                     odds_away = current['OddsA']
+
+                    roi1 = pred * odds_home
+                    roi2 = (1 - pred) * odds_away
+
+                    max_roi = max(roi1, roi2)
+
+                    print(f'\n Estimated ROI: {round(max_roi - 1.0, 3)}')
+
+                    self.roi_dist.append(max_roi - 1.0)
 
                     min_home_odds = (1 / pred - 1) * 1.0 + 1 + 0.02
                     min_away_odds = (1 / (1 - pred) - 1) * 1.0 + 1 + 0.02
