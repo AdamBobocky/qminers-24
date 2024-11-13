@@ -18,14 +18,15 @@ class PlayerRatingModel(nn.Module):
         #     nn.Linear(15, 1)
         # )
         self.layers = nn.Sequential(
-            nn.Linear(27, 12),
-            nn.ReLU(),
-            nn.Linear(12, 2)
+            # nn.Linear(27, 12),
+            # nn.ReLU(),
+            # nn.Linear(12, 1)
+            nn.Linear(27, 1)
         )
 
     def forward(self, player_stats, game_weight):
-        player_output = self.layers(player_stats)
-        weighted_output = player_output * game_weight.unsqueeze()
+        player_output = self.layers(player_stats).squeeze()
+        weighted_output = player_output * game_weight
 
         return torch.sum(weighted_output, axis=2) / (torch.sum(game_weight, axis=2) + 0.001)
 
@@ -47,9 +48,6 @@ class GameRatingModel(nn.Module):
 
         home_team_rating = torch.sum(home_ratings, axis=1)
         away_team_rating = torch.sum(away_ratings, axis=1)
-
-        print(home_team_stats.shape, home_outputs.shape, home_ratings.shape, home_team_rating.shape)
-        #       [64, 15, 50, 15]       [64, 15]            [64, 15]            [64]
 
         score_diff = home_team_rating - away_team_rating
 
@@ -92,16 +90,27 @@ def train(model, dataloader, optimizer, loss_fn, device):
 def validate(model, dataloader, loss_fn, device):
     model.eval()
     total_loss = 0.0
+    total_correct = 0
+    total_samples = 0
     predictions = []
     with torch.no_grad():
         for home_team_stats, away_team_stats, home_game_weights, away_game_weights, home_play_times, away_play_times, true_score_diff in dataloader:
             predicted_score_diff = model(home_team_stats, away_team_stats, home_game_weights, away_game_weights,
                                          home_play_times, away_play_times)
             loss = loss_fn(predicted_score_diff, true_score_diff)
+
+            # Calculate binary accuracy (direction match)
+            predicted_sign = torch.sign(predicted_score_diff)
+            true_sign = torch.sign(true_score_diff)
+            correct = (predicted_sign == true_sign).sum().item()
+            total_correct += correct
+            total_samples += true_score_diff.size(0)
+
             total_loss += loss.item()
             predictions.extend(predicted_score_diff.cpu().numpy())
     avg_loss = total_loss / len(dataloader)
-    return avg_loss, predictions
+    accuracy = total_correct / total_samples
+    return avg_loss, accuracy, predictions
 
 # Training setup
 device = torch.device('cpu')
@@ -137,14 +146,14 @@ train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
 val_loader = DataLoader(val_data, batch_size=64, shuffle=False)
 
 # Training loop
-num_epochs = 500
+num_epochs = 50
 for epoch in range(num_epochs):
     if epoch > 4:
         enabled_log = True
 
     train_loss, train_accuracy = train(model, train_loader, optimizer, loss_fn, device)
-    val_loss, val_predictions = validate(model, val_loader, loss_fn, device)
-    print(f'Epoch {epoch+1} / {num_epochs}, Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.4f}, Val Loss: {val_loss:.4f}')
+    val_loss, val_accuracy, val_predictions = validate(model, val_loader, loss_fn, device)
+    print(f'Epoch {epoch+1} / {num_epochs}, train_loss: {train_loss:.4f}, train_accuracy: {train_accuracy:.4f}, val_loss: {val_loss:.4f}, val_accuracy: {val_accuracy:.4f}')
 
 validation_results = {key: float(pred) for key, pred in zip(keys[split_index:], val_predictions)}
 

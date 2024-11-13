@@ -5,19 +5,16 @@ import pandas as pd
 from datetime import datetime
 from sklearn.linear_model import LogisticRegression
 
+def inverse_sigmoid(x):
+    return math.log(x / (1 - x))
+
 with open('temp/predictions.json', 'r') as f:
     predictions = json.load(f)
 
-# def inverse_sigmoid(x):
-#     return math.log(x / (1 - x))
+with open('src/meta_model/data.json', 'r') as f:
+    all_data = json.load(f)
 
-# with open('temp/predictions.json', 'r') as f:
-#     src_predictions = json.load(f)
-
-# with open('src/model2/all_data.json', 'r') as f:
-#     all_data = json.load(f)
-
-# predictions = { item['index']: ((inverse_sigmoid(item['my_pred']), src_predictions[item['index']]) if item['index'] in src_predictions else None) for item in all_data }
+predictions = { item['index']: ((inverse_sigmoid(item['my_pred']), predictions[item['index']]) if item['index'] in predictions else None) for item in all_data }
 
 class Model:
     def __init__(self):
@@ -82,9 +79,7 @@ class Model:
             str_i = str(i)
 
             if str_i in predictions and predictions[str_i] is not None:
-                # self.past_pred.append([0.0, home_win])
-                # self.past_pred.append([predictions[str_i][0], predictions[str_i][1], home_win])
-                self.past_pred.append([predictions[str_i], home_win])
+                self.past_pred.append([predictions[str_i][0], predictions[str_i][1], home_win])
 
             if i in self.prediction_map:
                 if self.prediction_map[i] == 0.5:
@@ -123,7 +118,6 @@ class Model:
 
             str_i = str(i)
 
-            # if str_i in predictions and predictions[str_i] is not None:
             if current['Date'] == summary.iloc[0]['Date'] and str_i in predictions and predictions[str_i] is not None:
                 if len(self.past_pred) >= 1500:
                     self.bet_opps += 1
@@ -132,9 +126,7 @@ class Model:
                     sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
                     lr = LogisticRegression(max_iter=10000)
                     lr.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights[::-1])
-                    # pred = lr.predict_proba(np.array([[predictions[str_i][0], predictions[str_i][1]]]))[0, 1]
-                    pred = lr.predict_proba(np.array([[predictions[str_i]]]))[0, 1]
-                    # pred = lr.predict_proba(np.array([[0.0]]))[0, 1]
+                    pred = lr.predict_proba(np.array([[predictions[str_i][0], predictions[str_i][1]]]))[0, 1]
 
                     self.prediction_map[i] = pred
 
@@ -145,18 +137,18 @@ class Model:
                     min_away_odds = (1 / (1 - pred) - 1) * 1.1 + 1 + 0.05
 
                     if odds_home >= min_home_odds:
-                        bets.at[i, 'BetH'] = max_bet
+                        bets.at[i, 'BetH'] = min_bet
 
                         self.exp_pnl += pred * odds_home - 1
-                        self.bet_volume += max_bet
+                        self.bet_volume += min_bet
                         self.bet_count += 1
                         self.bet_sum_odds += odds_home
 
                     if odds_away >= min_away_odds:
-                        bets.at[i, 'BetA'] = max_bet
+                        bets.at[i, 'BetA'] = min_bet
 
                         self.exp_pnl += (1 - pred) * odds_away - 1
-                        self.bet_volume += max_bet
+                        self.bet_volume += min_bet
                         self.bet_count += 1
                         self.bet_sum_odds += odds_away
 
