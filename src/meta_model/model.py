@@ -6,7 +6,7 @@ from sklearn.linear_model import LogisticRegression
 
 from pythagorean.model import Pythagorean
 from four_factor.model import FourFactor
-from elo.model import Elo
+from nate_silver_elo.model import NateSilverElo
 from gradient_descent.model import GradientDescent
 from exhaustion.model import Exhaustion
 
@@ -19,7 +19,7 @@ class Model:
         self.model_list = [
             Pythagorean(),
             FourFactor(),
-            Elo(),
+            NateSilverElo(),
             GradientDescent(),
             Exhaustion()
         ]
