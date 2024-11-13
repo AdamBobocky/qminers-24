@@ -8,6 +8,7 @@ from pythagorean.model import Pythagorean
 from four_factor.model import FourFactor
 from elo.model import Elo
 from gradient_descent.model import GradientDescent
+from exhaustion.model import Exhaustion
 
 class Model:
     def __init__(self, debug_mode=False):
@@ -19,7 +20,8 @@ class Model:
             Pythagorean(),
             FourFactor(),
             Elo(),
-            GradientDescent()
+            GradientDescent(),
+            Exhaustion()
         ]
         # End
 
