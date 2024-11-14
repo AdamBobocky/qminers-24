@@ -51,7 +51,10 @@ class FourFactor:
 
         return totals
 
-    def add_game(self, current):
+    def pre_add_game(self, current, current_players):
+        pass
+
+    def add_game(self, current, current_players):
         val1 = self._get_team_input_data(current['HID'], current['Date'])
         val2 = self._get_team_input_data(current['AID'], current['Date'])
 

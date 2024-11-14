@@ -125,7 +125,10 @@ class GradientDescent:
 
         self.team_mus, self.sigma, self.home_advantage = best_state
 
-    def add_game(self, current):
+    def pre_add_game(self, current, current_players):
+        pass
+
+    def add_game(self, current, current_players):
         self._check_season(current['Season'])
 
         timestamp = int(current['Date'].timestamp() * 1000)

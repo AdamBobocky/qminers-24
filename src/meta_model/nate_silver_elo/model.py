@@ -13,7 +13,10 @@ class NateSilverElo:
     def _win_probability(self, x):
         return 1 / (1 + (math.exp(-x / 175)))
 
-    def add_game(self, current):
+    def pre_add_game(self, current, current_players):
+        pass
+
+    def add_game(self, current, current_players):
         season = current['Season']
         home_id = current['HID']
         away_id = current['AID']
@@ -40,6 +43,13 @@ class NateSilverElo:
         return [
             self.elo_map[home_id] - self.elo_map[away_id] + 100
         ]
+
+    def get_team_strength(self, team_id, is_home, season):
+        if season > self.last_season:
+            self.last_season = season
+            self._new_season()
+
+        return self.elo_map[team_id] + 100 * (0.5 if is_home else -0.5)
 
     def get_k_factor(self, score_difference, elo_home, elo_away):
         if score_difference > 0:

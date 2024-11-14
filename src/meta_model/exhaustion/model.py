@@ -4,7 +4,10 @@ class Exhaustion:
     def __init__(self):
         self.team_rest = {}
 
-    def add_game(self, current):
+    def pre_add_game(self, current, current_players):
+        pass
+
+    def add_game(self, current, current_players):
         date = current['Date']
         home_id = current['HID']
         away_id = current['AID']

@@ -11,7 +11,10 @@ class Elo:
 
         self.elo_map = defaultdict(float)
 
-    def add_game(self, current):
+    def pre_add_game(self, current, current_players):
+        pass
+
+    def add_game(self, current, current_players):
         home_id = current['HID']
         away_id = current['AID']
 

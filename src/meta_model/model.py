@@ -4,11 +4,13 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 
+from template.model import Template
 from pythagorean.model import Pythagorean
 from four_factor.model import FourFactor
 from nate_silver_elo.model import NateSilverElo
 from gradient_descent.model import GradientDescent
 from exhaustion.model import Exhaustion
+from neural_network.model import NeuralNetwork
 
 class Model:
     def __init__(self, debug_mode=False):
@@ -16,12 +18,15 @@ class Model:
 
         # Hyperparameters
         self.ensamble_required_n = 2000
+        nate_silver_elo = NateSilverElo()
         self.model_list = [
+            Template(),
             Pythagorean(),
             FourFactor(),
-            NateSilverElo(),
             GradientDescent(),
-            Exhaustion()
+            Exhaustion(),
+            nate_silver_elo,
+            NeuralNetwork(nate_silver_elo)
         ]
         # End
 
@@ -111,7 +116,7 @@ class Model:
                 'coefs': self.coef_map[idx]
             })
 
-    def _game_increment(self, idx, current):
+    def _game_increment(self, idx, current, current_players):
         season = current['Season']
         date = current['Date']
         home_id = current['HID']
@@ -127,8 +132,13 @@ class Model:
 
         self._handle_metrics(idx, current)
 
+        # Let the models create training frames before new data arrives
         for model in self.model_list:
-            model.add_game(current)
+            model.pre_add_game(current, current_players)
+
+        # Add new data to the models
+        for model in self.model_list:
+            model.add_game(current, current_players)
 
     def _print_metrics(self):
         print('')
@@ -159,8 +169,9 @@ class Model:
 
         for idx in games_increment.index:
             current = games_increment.loc[idx]
+            current_players = players_increment[(players_increment['Game'] == idx) & (players_increment['MIN'] >= 3)]
 
-            self._game_increment(idx, current)
+            self._game_increment(idx, current, current_players)
 
         min_bet = summary.iloc[0]['Min_bet']
         max_bet = summary.iloc[0]['Max_bet']
@@ -175,44 +186,45 @@ class Model:
             home_id = current['HID']
             away_id = current['AID']
 
-            input_arr = self._get_input_features(home_id, away_id, season, date)
+            if len(self.past_pred) >= self.ensamble_required_n:
+                input_arr = self._get_input_features(home_id, away_id, season, date)
 
-            if input_arr is not None and len(self.past_pred) >= self.ensamble_required_n:
-                if self.ensamble_retrain <= 0:
-                    self.ensamble_retrain = 200
-                    np_array = np.array(self.past_pred)
-                    sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
-                    self.ensamble = LogisticRegression(max_iter=10000)
-                    self.ensamble.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights[::-1])
+                if input_arr is not None:
+                    if self.ensamble_retrain <= 0:
+                        self.ensamble_retrain = 200
+                        np_array = np.array(self.past_pred)
+                        sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
+                        self.ensamble = LogisticRegression(max_iter=10000)
+                        self.ensamble.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights[::-1])
 
-                self.bet_metrics['opps'] += 1
+                    self.bet_metrics['opps'] += 1
 
-                pred = self.ensamble.predict_proba(np.array([input_arr]))[0, 1]
+                    pred = self.ensamble.predict_proba(np.array([input_arr]))[0, 1]
 
-                self.prediction_map[i] = pred
-                self.input_map[i] = input_arr
-                self.coef_map[i] = [self.ensamble.intercept_.tolist(), *self.ensamble.coef_.tolist()]
+                    self.prediction_map[i] = pred
+                    self.input_map[i] = input_arr
+                    self.coef_map[i] = [self.ensamble.intercept_.tolist(), *self.ensamble.coef_.tolist()]
 
-                odds_home = current['OddsH']
-                odds_away = current['OddsA']
+                    odds_home = current['OddsH']
+                    odds_away = current['OddsA']
 
-                min_home_odds = (1 / pred - 1) * 1.1 + 1 + 0.03
-                min_away_odds = (1 / (1 - pred) - 1) * 1.1 + 1 + 0.03
+                    min_home_odds = (1 / pred - 1) * 1.1 + 1 + 0.03
+                    min_away_odds = (1 / (1 - pred) - 1) * 1.1 + 1 + 0.03
 
-                if odds_home >= min_home_odds:
-                    bets.at[i, 'BetH'] = min_bet
+                    if odds_home >= min_home_odds:
+                        bets.at[i, 'BetH'] = min_bet
 
-                    self.bet_metrics['exp_pnl'] += pred * odds_home - 1
-                    self.bet_metrics['volume'] += min_bet
-                    self.bet_metrics['count'] += 1
-                    self.bet_metrics['sum_odds'] += odds_home
+                        self.bet_metrics['exp_pnl'] += pred * odds_home - 1
+                        self.bet_metrics['volume'] += min_bet
+                        self.bet_metrics['count'] += 1
+                        self.bet_metrics['sum_odds'] += odds_home
 
-                if odds_away >= min_away_odds:
-                    bets.at[i, 'BetA'] = min_bet
+                    if odds_away >= min_away_odds:
+                        bets.at[i, 'BetA'] = min_bet
 
-                    self.bet_metrics['exp_pnl'] += (1 - pred) * odds_away - 1
-                    self.bet_metrics['volume'] += min_bet
-                    self.bet_metrics['count'] += 1
-                    self.bet_metrics['sum_odds'] += odds_away
+                        self.bet_metrics['exp_pnl'] += (1 - pred) * odds_away - 1
+                        self.bet_metrics['volume'] += min_bet
+                        self.bet_metrics['count'] += 1
+                        self.bet_metrics['sum_odds'] += odds_away
 
         return bets
