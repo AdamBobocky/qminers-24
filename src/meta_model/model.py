@@ -167,11 +167,17 @@ class Model:
             with open('src/meta_model/data.json', 'w') as json_file:
                 json.dump(self.pred_list, json_file, indent=2)
 
+        done = 0
+        total = len(games_increment)
+
         for idx in games_increment.index:
             current = games_increment.loc[idx]
             current_players = players_increment[(players_increment['Game'] == idx) & (players_increment['MIN'] >= 3)]
 
             self._game_increment(idx, current, current_players)
+            done += 1
+            if done % 100 == 0:
+                print(f'{done} / {total}')
 
         min_bet = summary.iloc[0]['Min_bet']
         max_bet = summary.iloc[0]['Max_bet']
@@ -208,8 +214,8 @@ class Model:
                     odds_home = current['OddsH']
                     odds_away = current['OddsA']
 
-                    min_home_odds = (1 / pred - 1) * 1.1 + 1 + 0.03
-                    min_away_odds = (1 / (1 - pred) - 1) * 1.1 + 1 + 0.03
+                    min_home_odds = (1 / pred - 1) * 1.0 + 1 + 0.02
+                    min_away_odds = (1 / (1 - pred) - 1) * 1.0 + 1 + 0.02
 
                     if odds_home >= min_home_odds:
                         bets.at[i, 'BetH'] = min_bet

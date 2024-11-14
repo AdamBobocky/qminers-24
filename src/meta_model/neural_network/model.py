@@ -15,9 +15,7 @@ class PlayerRatingModel(nn.Module):
         self.layers = nn.Sequential(
             nn.Linear(22, 12),
             nn.ReLU(),
-            nn.Linear(12, 8),
-            nn.ReLU(),
-            nn.Linear(8, 1)
+            nn.Linear(12, 1)
         )
 
     def forward(self, player_stats, game_weight):
@@ -64,11 +62,12 @@ class NeuralNetwork:
         self.team_rosters = {}
         self.player_data = defaultdict(list)
 
-        self.home_inputs = []
-        self.away_inputs = []
+        self.home_inputs = np.empty((50000, 15, 40, self.INPUTS_DIM + 1), np.float32)
+        self.away_inputs = np.empty((50000, 15, 40, self.INPUTS_DIM + 1), np.float32)
         self.home_playtimes = []
         self.away_playtimes = []
         self.outputs = []
+        self.training_data = 0
 
     def _row_to_inputs(self, row, am_home, my_id, opponent_id, season):
         return [
@@ -217,12 +216,13 @@ class NeuralNetwork:
         if game_frame is not None:
             c_home_inputs, c_home_playtimes, c_away_inputs, c_away_playtimes = game_frame
 
-            self.home_inputs.append(c_home_inputs)
+            self.home_inputs[self.training_data] = np.array(c_home_inputs, np.float32)
+            self.away_inputs[self.training_data] = np.array(c_away_inputs, np.float32)
             self.home_playtimes.append(c_home_playtimes)
-            self.away_inputs.append(c_away_inputs)
             self.away_playtimes.append(c_away_playtimes)
             self.outputs.append((abs(home_score - away_score) + 3) ** 0.7 * (1 if home_score > away_score else -1))
             self.retrain_countdown -= 1
+            self.training_data += 1
 
     def add_game(self, current, current_players):
         season = current['Season']
@@ -270,13 +270,11 @@ class NeuralNetwork:
             self.retrain_countdown = 500
 
             print('\nRetraining! Preparing dataset...')
-            np_array_home_inputs = np.array(self.home_inputs).astype(np.float32)
-            np_array_away_inputs = np.array(self.away_inputs).astype(np.float32)
 
-            home_team_stats = torch.tensor(np_array_home_inputs[:, :, :, 1:], dtype=torch.float32)
-            away_team_stats = torch.tensor(np_array_away_inputs[:, :, :, 1:], dtype=torch.float32)
-            home_game_weights = torch.tensor(np_array_home_inputs[:, :, :, 0], dtype=torch.float32)
-            away_game_weights = torch.tensor(np_array_away_inputs[:, :, :, 0], dtype=torch.float32)
+            home_team_stats = torch.from_numpy(self.home_inputs[:self.training_data, :, :, 1:])
+            away_team_stats = torch.from_numpy(self.away_inputs[:self.training_data, :, :, 1:])
+            home_game_weights = torch.from_numpy(self.home_inputs[:self.training_data, :, :, 0])
+            away_game_weights = torch.from_numpy(self.away_inputs[:self.training_data, :, :, 0])
             home_play_times = torch.tensor(np.array(self.home_playtimes).astype(np.float32), dtype=torch.float32)
             away_play_times = torch.tensor(np.array(self.away_playtimes).astype(np.float32), dtype=torch.float32)
             true_score_diff = torch.tensor(np.array(self.outputs), dtype=torch.float32)
