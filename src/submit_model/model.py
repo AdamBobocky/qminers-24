@@ -576,7 +576,7 @@ class Model:
 
         min_bet = summary.iloc[0]['Min_bet']
         max_bet = summary.iloc[0]['Max_bet']
-        my_bet = min_bet * 2
+        my_bet = max(min_bet, min(max_bet * 0.3, summary.iloc[0]['Bankroll'] * 0.03))
 
         bets = pd.DataFrame(data=np.zeros((len(opps), 2)), columns=['BetH', 'BetA'], index=opps.index)
 
