@@ -55,7 +55,7 @@ class NateSilverElo:
             self.last_season = season
             self._new_season()
 
-        return self.elo_map[home_id] + 100 * (0.5 if is_home else -0.5)
+        return self.elo_map[team_id] + 100 * (0.5 if is_home else -0.5)
 
     def get_k_factor(self, score_difference, elo_home, elo_away):
         if score_difference > 0:
@@ -67,13 +67,14 @@ total_games = len(games_df)
 
 elo = NateSilverElo()
 
-INPUTS_DIM = 21
+INPUTS_DIM = 22
 
-def row_to_inputs(row, home, opponent_id, season):
+def row_to_inputs(row, am_home, my_id, opponent_id, season):
     return [
-        elo.get_team_strength(opponent_id, home, season) / 100,
+        elo.get_team_strength(my_id, am_home, season) / 100,
+        elo.get_team_strength(opponent_id, not am_home, season) / 100,
         season / 10,
-        home,                          # Whether player is part of home team
+        1 if am_home else 0,        # Whether player is part of home team
         row['MIN'],
         row['PTS'] / row['MIN'],    # Points
         row['ORB'] / row['MIN'],    # Offensive rebounds
@@ -179,7 +180,7 @@ for index, current in games_df.iterrows():
             home_playtimes.append(c_home_playtimes)
             away_inputs.append(c_away_inputs)
             away_playtimes.append(c_away_playtimes)
-            outputs.append(abs(home_score - away_score) ** 0.8 * (1 if home_score > away_score else -1))
+            outputs.append((abs(home_score - away_score) + 3) ** 0.7 * (1 if home_score > away_score else -1))
 
     # Log data
     game_players = players_df[(players_df['Game'] == index) & (players_df['MIN'] >= 3)]
@@ -202,12 +203,12 @@ for index, current in games_df.iterrows():
     mapped_home_players = [{
         'pid': row['Player'],
         'mins': row['MIN'],
-        'inputs': row_to_inputs(row, 1, away_id, season)
+        'inputs': row_to_inputs(row, True, home_id, away_id, season)
     } for _, row in home_players.iterrows()]
     mapped_away_players = [{
         'pid': row['Player'],
         'mins': row['MIN'],
-        'inputs': row_to_inputs(row, 0, home_id, season)
+        'inputs': row_to_inputs(row, False, away_id, home_id, season)
     } for _, row in away_players.iterrows()]
 
     for data in [*mapped_home_players, *mapped_away_players]:

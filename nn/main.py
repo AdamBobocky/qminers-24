@@ -18,7 +18,7 @@ class PlayerRatingModel(nn.Module):
         #     nn.Linear(21, 1)
         # )
         self.layers = nn.Sequential(
-            nn.Linear(21, 12),
+            nn.Linear(22, 12),
             nn.ReLU(),
             nn.Linear(12, 8),
             nn.ReLU(),
