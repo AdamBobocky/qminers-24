@@ -175,13 +175,20 @@ class NeuralNetwork:
         total_correct = 0
         total_samples = 0
 
-        for home_team_stats, away_team_stats, home_game_weights, away_game_weights, home_play_times, away_play_times, true_score_diff in dataloader:
+        for batch_idx, (home_team_stats, away_team_stats, home_game_weights, away_game_weights, home_play_times, away_play_times, true_score_diff) in enumerate(dataloader):
             # Forward pass
             predicted_score_diff = self.model(home_team_stats, away_team_stats, home_game_weights, away_game_weights,
                                         home_play_times, away_play_times)
 
             # Compute loss
             loss = self.loss_fn(predicted_score_diff, true_score_diff)
+
+            # Apply sample weights: weight decays with distance from the most recent sample
+            batch_size = true_score_diff.size(0)
+            weights = torch.tensor([0.9998 ** (len(dataloader.dataset) - (batch_idx * batch_size + i))
+                                    for i in range(batch_size)], dtype=torch.float32)
+            weights = weights.to(loss.device)
+            weighted_loss = (loss * weights).mean()  # Apply weights to loss
 
             # Calculate binary accuracy (direction match)
             predicted_sign = torch.sign(predicted_score_diff)
@@ -192,11 +199,11 @@ class NeuralNetwork:
 
             # Backpropagation and optimization
             self.optimizer.zero_grad()
-            loss.backward()
+            weighted_loss.backward()
             self.optimizer.step()
 
             # Accumulate loss
-            total_loss += loss.item()
+            total_loss += weighted_loss.item()
 
         # Calculate average loss and binary accuracy for this epoch
         avg_loss = total_loss / len(dataloader)
@@ -290,7 +297,7 @@ class NeuralNetwork:
             for epoch in range(num_epochs):
                 train_loss, train_accuracy = self._train(train_loader)
 
-                print(f'Epoch {epoch + 1} / {num_epochs}, train_loss: {train_loss:.4f}, train_accuracy: {train_accuracy:.4f}')
+                print(f'Epoch {epoch + 1} / {num_epochs}, train_loss: {train_loss:.4f}, train_accuracy: {train_accuracy:.4f}; N={self.training_data}')
 
         c_home_inputs, c_home_playtimes, c_away_inputs, c_away_playtimes = game_frame
         np_array_home_inputs = np.array(c_home_inputs).astype(np.float32)

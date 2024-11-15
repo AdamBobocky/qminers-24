@@ -1,7 +1,5 @@
-import math
 import json
 import optuna
-from datetime import datetime
 
 with open('src/meta_model/data.json', 'r') as file:
     data = json.load(file)
@@ -13,17 +11,8 @@ def objective(trial):
     away_flat = trial.suggest_float('away_flat', 0, 2.0)
 
     pnl = 0
-    last_season = -1
-    season_start = 0
 
     for el in data:
-        if el['season'] != last_season:
-            last_season = el['season']
-            season_start = datetime.strptime(el['date'], '%Y-%m-%d %H:%M:%S')
-
-        date = datetime.strptime(el['date'], '%Y-%m-%d %H:%M:%S')
-        days = (date - season_start).days
-        # Make a bet
         pred = el['my_pred']
         odds_home = el['odds_home']
         odds_away = el['odds_away']
