@@ -13,16 +13,21 @@ class PlayerRatingModel(nn.Module):
         super(PlayerRatingModel, self).__init__()
 
         self.layers = nn.Sequential(
-            nn.Linear(22, 12),
+            nn.Linear(19, 16),
             nn.ReLU(),
-            nn.Linear(12, 1)
+            nn.Dropout(0.1),
+            nn.Linear(16, 8),
+            nn.ReLU(),
+            nn.Linear(8, 4),
+            nn.ReLU()
         )
 
     def forward(self, player_stats, game_weight):
         player_output = self.layers(player_stats).squeeze()
-        weighted_output = player_output * game_weight
 
-        return torch.sum(weighted_output, axis=2) / (torch.sum(game_weight, axis=2) + 0.001)
+        weighted_output = player_output * game_weight.unsqueeze(-1)
+
+        return torch.sum(weighted_output, axis=2) / (torch.sum(game_weight, axis=2).unsqueeze(-1) + 0.001)
 
 class GameRatingModel(nn.Module):
     def __init__(self):
@@ -31,27 +36,33 @@ class GameRatingModel(nn.Module):
         # Instantiate the player rating model
         self.player_model = PlayerRatingModel()
         self.home_field_advantage = nn.Parameter(torch.tensor(4.5))
+        self.layers = nn.Sequential(
+            nn.Linear(8, 16),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(16, 1)
+        )
 
     def forward(self, home_team_stats, away_team_stats, home_game_weights, away_game_weights,
                 home_play_times, away_play_times):
         home_outputs = self.player_model(home_team_stats, home_game_weights)
         away_outputs = self.player_model(away_team_stats, away_game_weights)
 
-        home_ratings = home_outputs * home_play_times
-        away_ratings = away_outputs * away_play_times
+        home_ratings = home_outputs * home_play_times.unsqueeze(-1)
+        away_ratings = away_outputs * away_play_times.unsqueeze(-1)
 
         home_team_rating = torch.sum(home_ratings, axis=1)
         away_team_rating = torch.sum(away_ratings, axis=1)
 
-        score_diff = home_team_rating - away_team_rating
+        x = self.layers(torch.cat((home_team_rating, away_team_rating), dim=-1)).squeeze()
 
-        return score_diff + self.home_field_advantage
+        return x + self.home_field_advantage
 
 class NeuralNetwork:
     def __init__(self, elo):
         self.elo = elo
 
-        self.INPUTS_DIM = 22
+        self.INPUTS_DIM = 19
 
         self.model = GameRatingModel().to(torch.device('cpu'))
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001, weight_decay=2e-5)
@@ -62,8 +73,8 @@ class NeuralNetwork:
         self.team_rosters = {}
         self.player_data = defaultdict(list)
 
-        self.home_inputs = np.empty((50000, 15, 40, self.INPUTS_DIM + 1), np.float32)
-        self.away_inputs = np.empty((50000, 15, 40, self.INPUTS_DIM + 1), np.float32)
+        self.home_inputs = np.empty((50000, 12, 40, self.INPUTS_DIM + 1), np.float32)
+        self.away_inputs = np.empty((50000, 12, 40, self.INPUTS_DIM + 1), np.float32)
         self.home_playtimes = []
         self.away_playtimes = []
         self.outputs = []
@@ -73,29 +84,26 @@ class NeuralNetwork:
         return [
             self.elo.get_team_strength(my_id, am_home, season) / 100,
             self.elo.get_team_strength(opponent_id, not am_home, season) / 100,
-            season / 10,
             1 if am_home else 0,        # Whether player is part of home team
             row['MIN'],
-            row['PTS'] / row['MIN'],    # Points
-            row['ORB'] / row['MIN'],    # Offensive rebounds
+            row['FGM'],
 
-            row['DRB'] / row['MIN'],    # Defensive rebounds
-            row['AST'] / row['MIN'],    # Assists
-            row['STL'] / row['MIN'],    # Steals
-            row['BLK'] / row['MIN'],    # Blocks
-            row['FGA'] / row['MIN'],    # Field goal attempts
+            row['FGA'],
+            row['FG3M'],
+            row['FG3A'],
+            row['FTM'],
+            row['FTA'],
 
-            row['FTA'] / row['MIN'],    # Free throw attempts
-            row['TOV'] / row['MIN'],    # Turnovers
-            row['PF'] / row['MIN'],     # Personal fouls
-            row['FG3M'] / (row['FG3A'] + 0.00001),
-            row['FTM'] / (row['FTA'] + 0.00001),
+            row['ORB'],
+            row['DRB'],
+            row['RB'],
+            row['AST'],
+            row['STL'],
 
-            (row['FGM'] + 0.5 * row['FG3M']) / (row['FGA'] + 0.00001),
-            row['TOV'] / (row['FGA'] + 0.44 * row['FTA'] + row['TOV'] + 0.00001),
-            row['ORB'] / (row['ORB'] + row['DRB'] + 0.00001),
-            row['FTA'] / (row['FGA'] + 0.00001),
-            row['PTS'] / (2 * row['FGA'] + 0.44 * row['FTA'] + 0.00001)    # TS%
+            row['BLK'],
+            row['TOV'],
+            row['PF'],
+            row['PTS']
         ]
 
     def _get_team_roster(self, season, team_id, date):
@@ -107,9 +115,9 @@ class NeuralNetwork:
             for pid, mins in c_roster:
                 roster[pid] += mins
 
-        roster = sorted(roster.items(), key=lambda x: x[1], reverse=True)[:15]
+        roster = sorted(roster.items(), key=lambda x: x[1], reverse=True)[:12]
 
-        while len(roster) < 15:
+        while len(roster) < 12:
             roster.append([-1, 0])
 
         total_mins = sum(x[1] for x in roster)
@@ -139,7 +147,7 @@ class NeuralNetwork:
 
                     for i in range(len(c_player_data)):
                         point_date, point_mins = c_player_data[i][0]
-                        time_weight = 0.9955 ** abs((date - point_date).days)
+                        time_weight = 0.9965 ** abs((date - point_date).days)
                         c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
                     while len(c_player_data) < 40:
@@ -156,7 +164,7 @@ class NeuralNetwork:
 
                     for i in range(len(c_player_data)):
                         point_date, point_mins = c_player_data[i][0]
-                        time_weight = 0.9955 ** abs((date - point_date).days)
+                        time_weight = 0.9965 ** abs((date - point_date).days)
                         c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
                     while len(c_player_data) < 40:
@@ -185,7 +193,7 @@ class NeuralNetwork:
 
             # Apply sample weights: weight decays with distance from the most recent sample
             batch_size = true_score_diff.size(0)
-            weights = torch.tensor([0.9998 ** (len(dataloader.dataset) - (batch_idx * batch_size + i))
+            weights = torch.tensor([0.99984 ** (len(dataloader.dataset) - (batch_idx * batch_size + i))
                                     for i in range(batch_size)], dtype=torch.float32)
             weights = weights.to(loss.device)
             weighted_loss = (loss * weights).mean()  # Apply weights to loss
@@ -292,7 +300,7 @@ class NeuralNetwork:
 
             print('\nRetraining!')
 
-            num_epochs = 100 if self.first_training else 15
+            num_epochs = 60 if self.first_training else 20
             self.first_training = False
             for epoch in range(num_epochs):
                 train_loss, train_accuracy = self._train(train_loader)
