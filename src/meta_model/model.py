@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 
-from template.model import Template
 from pythagorean.model import Pythagorean
 from four_factor.model import FourFactor
 from nate_silver_elo.model import NateSilverElo
@@ -121,8 +120,9 @@ class Model:
         home_id = current['HID']
         away_id = current['AID']
         home_win = current['H']
+        year = int(str(current['Date'])[0:4])
 
-        if int(str(current['Date'])[0:4]) >= 1994:
+        if year >= 1994:
             input_arr = self._get_input_features(home_id, away_id, season, date)
 
             if input_arr is not None:
@@ -131,7 +131,7 @@ class Model:
 
         self._handle_metrics(idx, current)
 
-        if int(str(current['Date'])[0:4]) >= 1986:
+        if year >= 1986:
             # Let the models create training frames before new data arrives
             for model in self.model_list:
                 model.pre_add_game(current, current_players)
@@ -181,6 +181,7 @@ class Model:
 
         min_bet = summary.iloc[0]['Min_bet']
         max_bet = summary.iloc[0]['Max_bet']
+        my_bet = max(min_bet, min(max_bet * 0.3, summary.iloc[0]['Bankroll'] * 0.03))
 
         bets = pd.DataFrame(data=np.zeros((len(opps), 2)), columns=['BetH', 'BetA'], index=opps.index)
 
@@ -218,18 +219,18 @@ class Model:
                     min_away_odds = (1 / (1 - pred) - 1) * 1.0 + 1 + 0.02
 
                     if odds_home >= min_home_odds:
-                        bets.at[i, 'BetH'] = min_bet
+                        bets.at[i, 'BetH'] = my_bet
 
                         self.bet_metrics['exp_pnl'] += pred * odds_home - 1
-                        self.bet_metrics['volume'] += min_bet
+                        self.bet_metrics['volume'] += my_bet
                         self.bet_metrics['count'] += 1
                         self.bet_metrics['sum_odds'] += odds_home
 
                     if odds_away >= min_away_odds:
-                        bets.at[i, 'BetA'] = min_bet
+                        bets.at[i, 'BetA'] = my_bet
 
                         self.bet_metrics['exp_pnl'] += (1 - pred) * odds_away - 1
-                        self.bet_metrics['volume'] += min_bet
+                        self.bet_metrics['volume'] += my_bet
                         self.bet_metrics['count'] += 1
                         self.bet_metrics['sum_odds'] += odds_away
 

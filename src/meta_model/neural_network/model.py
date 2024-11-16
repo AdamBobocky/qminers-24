@@ -13,10 +13,10 @@ class PlayerRatingModel(nn.Module):
         super(PlayerRatingModel, self).__init__()
 
         self.layers = nn.Sequential(
-            nn.Linear(19, 16),
+            nn.Linear(19, 12),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Linear(16, 8),
+            nn.Linear(12, 8),
             nn.ReLU(),
             nn.Linear(8, 4),
             nn.ReLU()
@@ -37,10 +37,10 @@ class GameRatingModel(nn.Module):
         self.player_model = PlayerRatingModel()
         self.home_field_advantage = nn.Parameter(torch.tensor(4.5))
         self.layers = nn.Sequential(
-            nn.Linear(8, 16),
+            nn.Linear(8, 12),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Linear(16, 1)
+            nn.Linear(12, 1)
         )
 
     def forward(self, home_team_stats, away_team_stats, home_game_weights, away_game_weights,
@@ -65,7 +65,7 @@ class NeuralNetwork:
         self.INPUTS_DIM = 19
 
         self.model = GameRatingModel().to(torch.device('cpu'))
-        self.optimizer = optim.Adam(self.model.parameters(), lr=0.001, weight_decay=2e-5)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=0.003, weight_decay=2e-5)
         self.loss_fn = nn.MSELoss()
         self.retrain_countdown = 0
         self.first_training = True
@@ -73,8 +73,8 @@ class NeuralNetwork:
         self.team_rosters = {}
         self.player_data = defaultdict(list)
 
-        self.home_inputs = np.empty((30000, 12, 40, self.INPUTS_DIM + 1), np.float32)
-        self.away_inputs = np.empty((30000, 12, 40, self.INPUTS_DIM + 1), np.float32)
+        self.home_inputs = np.empty((30000, 12, 26, self.INPUTS_DIM + 1), np.float32)
+        self.away_inputs = np.empty((30000, 12, 26, self.INPUTS_DIM + 1), np.float32)
         self.home_playtimes = []
         self.away_playtimes = []
         self.outputs = []
@@ -143,14 +143,14 @@ class NeuralNetwork:
                     c_player_data = []
 
                     if pid != -1 and pid in self.player_data:
-                        c_player_data = copy.deepcopy(self.player_data[pid][-40:])
+                        c_player_data = copy.deepcopy(self.player_data[pid][-26:])
 
                     for i in range(len(c_player_data)):
                         point_date, point_mins = c_player_data[i][0]
                         time_weight = 0.9965 ** abs((date - point_date).days)
                         c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
-                    while len(c_player_data) < 40:
+                    while len(c_player_data) < 26:
                         c_player_data.append([0] * (self.INPUTS_DIM + 1))
 
                     c_home_inputs.append(c_player_data)
@@ -160,14 +160,14 @@ class NeuralNetwork:
                     c_player_data = []
 
                     if pid != -1 and pid in self.player_data:
-                        c_player_data = copy.deepcopy(self.player_data[pid][-40:])
+                        c_player_data = copy.deepcopy(self.player_data[pid][-26:])
 
                     for i in range(len(c_player_data)):
                         point_date, point_mins = c_player_data[i][0]
                         time_weight = 0.9965 ** abs((date - point_date).days)
                         c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
-                    while len(c_player_data) < 40:
+                    while len(c_player_data) < 26:
                         c_player_data.append([0] * (self.INPUTS_DIM + 1))
 
                     c_away_inputs.append(c_player_data)
@@ -300,7 +300,7 @@ class NeuralNetwork:
 
             print('\nRetraining!')
 
-            num_epochs = 60 if self.first_training else 20
+            num_epochs = 40 if self.first_training else 10
             self.first_training = False
             for epoch in range(num_epochs):
                 train_loss, train_accuracy = self._train(train_loader)

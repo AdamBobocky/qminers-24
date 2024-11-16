@@ -1,47 +1,227 @@
+import math
 from collections import defaultdict
-from datetime import datetime
+import warnings
 
-class Pythagorean:
-    def __init__(self, power=16.5, regularization=120, daily_decay=0.992):
-        self.power = power
-        self.regularization = regularization
-        self.daily_decay = daily_decay
+warnings.filterwarnings('ignore')
 
-        self.team_map = defaultdict(list)
+class NateSilverElo:
+    def __init__(self):
+        self.elo_map = defaultdict(float)
+        self.last_season = -1
 
-    def add_game(self, current):
-        date = current['Date']
+    def _new_season(self):
+        for key in self.elo_map:
+            self.elo_map[key] *= 0.75
+
+    def _win_probability(self, x):
+        return 1 / (1 + (math.exp(-x / 175)))
+
+    def pre_add_game(self, current, current_players):
+        pass
+
+    def add_game(self, current, current_players):
+        season = current['Season']
         home_id = current['HID']
         away_id = current['AID']
         home_score = current['HSC']
         away_score = current['ASC']
 
-        if type(date) == 'str':
-            date = datetime.strptime(date, '%Y-%m-%d')
+        if season > self.last_season:
+            self.last_season = season
+            self._new_season()
 
-        home_difference = abs(home_score - away_score) ** self.power * (1 if home_score > away_score else -1)
-        away_difference = -home_difference
+        home_prediction = self._win_probability(self.elo_map[home_id] + 100 - self.elo_map[away_id])
+        away_prediction = 1 - home_prediction
 
-        self.team_map[home_id].append([date, home_score, away_score])
-        self.team_map[away_id].append([date, away_score, home_score])
+        k_factor = self.get_k_factor(home_score - away_score, self.elo_map[home_id] + 100, self.elo_map[away_id])
 
-    def _get_weighted(self, team_id, idx, date):
-        return sum([x[idx] * (self.daily_decay ** abs((date - x[0]).days)) for x in self.team_map[team_id][-100:]])
+        self.elo_map[home_id] += k_factor * (current['H'] - home_prediction)
+        self.elo_map[away_id] += k_factor * (current['A'] - away_prediction)
 
     def get_input_data(self, home_id, away_id, season, date):
-        if type(date) == 'str':
-            date = datetime.strptime(date, '%Y-%m-%d')
-
-        home_scored = self.regularization + self._get_weighted(home_id, 1, date)
-        home_allowed = self.regularization + self._get_weighted(home_id, 2, date)
-        away_scored = self.regularization + self._get_weighted(away_id, 1, date)
-        away_allowed = self.regularization + self._get_weighted(away_id, 2, date)
+        if season > self.last_season:
+            self.last_season = season
+            self._new_season()
 
         return [
-            (home_scored ** self.power) / (home_scored ** self.power + home_allowed ** self.power),
-            (away_scored ** self.power) / (away_scored ** self.power + away_allowed ** self.power)
+            self.elo_map[home_id] - self.elo_map[away_id] + 100
         ]
 
+    def get_team_strength(self, team_id, is_home, season):
+        if season > self.last_season:
+            self.last_season = season
+            self._new_season()
+
+        return self.elo_map[team_id] + 100 * (0.5 if is_home else -0.5)
+
+    def get_k_factor(self, score_difference, elo_home, elo_away):
+        if score_difference > 0:
+            return 20 * (score_difference + 3) ** 0.8 / (7.5 + 0.006 * (elo_home - elo_away))
+        else:
+            return 20 * (-score_difference + 3) ** 0.8 / (7.5 + 0.006 * (elo_away - elo_home))
+import math
+import numpy as np
+import pandas as pd
+from datetime import datetime
+from sklearn.linear_model import LogisticRegression
+from collections import defaultdict
+
+def inverse_sigmoid(x):
+    return math.log(x / (1 - x))
+
+def sigmoid(x):
+    return 1 / (1 + math.exp(-x))
+
+def x1(delta, game_sigma):
+    return 1 / (game_sigma * 2.50662828) * np.exp(-0.5 * (delta / game_sigma) ** 2)
+
+def x2(delta, game_sigma):
+    return delta / game_sigma ** 2
+
+def x3(delta, game_sigma):
+    return -delta / game_sigma ** 2
+
+def x4(delta, game_sigma):
+    return -(game_sigma ** 2 - delta ** 2) / game_sigma ** 3
+
+class GradientDescent:
+    def __init__(self, num_teams=30, learning_rate=0.03, monthly_decay=0.75, season_reset_mult=0.7):
+        self.learning_rate = learning_rate
+        self.monthly_decay = monthly_decay
+        self.season_reset_mult = season_reset_mult
+        self.games = np.empty((0, 5), int)
+        self.home_advantage = 5
+        self.sigma = 12
+        self.team_mus = np.zeros(num_teams)
+        self.team_sigmas = np.ones(num_teams) * 42
+        self.my_team_id = {}
+        self.last_season = -1
+        self.fit_date = None
+
+    def _check_season(self, season):
+        if self.last_season != season:
+            self.last_season = season
+
+            self.team_sigmas = np.ones_like(self.team_sigmas) * (42 * self.season_reset_mult)
+
+    def _get_time_weights(self):
+        last_ts = self.games[-1, 0]
+
+        return self.monthly_decay ** (np.abs(self.games[:, 0] - last_ts) / 30 / 24 / 60 / 60 / 1000)
+
+    def _gradients(self):
+        weights = self._get_time_weights()
+
+        home_ratings = self.team_mus[self.games[:, 1]]
+        away_ratings = self.team_mus[self.games[:, 2]]
+
+        expectations_home = self.home_advantage + home_ratings - away_ratings
+
+        realities_home = self.games[:, 3] - self.games[:, 4]
+        realities_home = np.sign(realities_home) * (np.abs(realities_home) + 3.0) ** 0.7
+        realities_away = self.games[:, 4] - self.games[:, 3]
+        realities_away = np.sign(realities_away) * (np.abs(realities_away) + 3.0) ** 0.7
+
+        game_sigmas = np.sqrt(self.team_sigmas[self.games[:, 1]] ** 2 + self.team_sigmas[self.games[:, 2]] ** 2 + self.sigma ** 2)
+
+        mus_adjustments_home = x2(realities_home + away_ratings - self.home_advantage - home_ratings, game_sigmas) * weights
+        mus_adjustments_away = x2(realities_away + home_ratings + self.home_advantage - away_ratings, game_sigmas) * weights
+        grad_sigma = x4(realities_home - expectations_home, game_sigmas) * weights
+        grad_home_advantage = x3(realities_home - expectations_home, game_sigmas) * weights
+
+        grad_team_mus = np.zeros_like(self.team_mus)
+
+        np.add.at(grad_team_mus, self.games[:, 1], mus_adjustments_home)
+        np.add.at(grad_team_mus, self.games[:, 2], mus_adjustments_away)
+
+        return grad_team_mus, np.mean(grad_sigma), np.mean(grad_home_advantage)
+
+    def _calculate_objective(self):
+        weights = self._get_time_weights()
+
+        home_ratings = self.team_mus[self.games[:, 1]]
+        away_ratings = self.team_mus[self.games[:, 2]]
+
+        expectations_home = self.home_advantage + home_ratings - away_ratings
+
+        realities_home = self.games[:, 3] - self.games[:, 4]
+        realities_away = self.games[:, 4] - self.games[:, 3]
+
+        game_sigmas = np.sqrt(self.team_sigmas[self.games[:, 1]] ** 2 + self.team_sigmas[self.games[:, 2]] ** 2 + self.sigma ** 2)
+
+        home_objective = np.sum(x1(realities_home + away_ratings - self.home_advantage - home_ratings, game_sigmas) * weights)
+        away_objective = np.sum(x1(realities_away + home_ratings + self.home_advantage - away_ratings, game_sigmas) * weights)
+        sigma_objective = np.sum(x1(realities_home - expectations_home, game_sigmas) * weights) * 0.1
+
+        return home_objective + away_objective + sigma_objective
+
+    def _map_team_id(self, team_id):
+        if team_id not in self.my_team_id:
+            self.my_team_id[team_id] = len(self.my_team_id)
+
+        return self.my_team_id[team_id]
+
+    def _fit(self):
+        games_count = len(self.games)
+        best_objective = self._calculate_objective() / games_count
+        best_state = [self.team_mus, self.sigma, self.home_advantage]
+        countdown = 30
+        while countdown > 0:
+            countdown -= 1
+
+            grad_team_mus, grad_sigma, grad_home_advantage = self._gradients()
+
+            self.team_mus += self.learning_rate * grad_team_mus
+            self.sigma += self.learning_rate * grad_sigma
+            self.home_advantage -= self.learning_rate * grad_home_advantage
+
+            new_objective = self._calculate_objective() / games_count
+
+            if new_objective > best_objective + 0.0001:
+                best_objective = new_objective
+                best_state = [self.team_mus, self.sigma, self.home_advantage]
+                countdown = 30
+
+        self.team_mus, self.sigma, self.home_advantage = best_state
+
+    def pre_add_game(self, current, current_players):
+        pass
+
+    def add_game(self, current, current_players):
+        self._check_season(current['Season'])
+
+        timestamp = int(current['Date'].timestamp() * 1000)
+        team_home = self._map_team_id(current['HID'])
+        team_away = self._map_team_id(current['AID'])
+        score_home = current['HSC']
+        score_away = current['ASC']
+
+        self.games = np.vstack([self.games, np.array([timestamp, team_home, team_away, score_home, score_away])])
+        self.games = self.games[-6000:]
+
+        # Reduce sigma
+        self.team_sigmas[team_home] = 1 / math.sqrt(1 / self.team_sigmas[team_home] ** 2 + 1 / self.sigma ** 2)
+        self.team_sigmas[team_away] = 1 / math.sqrt(1 / self.team_sigmas[team_away] ** 2 + 1 / self.sigma ** 2)
+
+        self.fit_date = None
+
+    def get_input_data(self, home_id, away_id, season, date):
+        self._check_season(season)
+
+        if self.fit_date is None or self.fit_date != date:
+            self.fit_date = date
+
+            self._fit()
+
+        team_home = self._map_team_id(home_id)
+        team_away = self._map_team_id(away_id)
+
+        game_exp = self.home_advantage + self.team_mus[team_home] - self.team_mus[team_away]
+        game_sigma = math.sqrt(self.team_sigmas[team_home] ** 2 + self.team_sigmas[team_away] ** 2 + self.sigma ** 2)
+
+        return [
+            game_exp / game_sigma
+        ]
 import math
 import numpy as np
 from collections import defaultdict
@@ -95,7 +275,10 @@ class FourFactor:
 
         return totals
 
-    def add_game(self, current):
+    def pre_add_game(self, current, current_players):
+        pass
+
+    def add_game(self, current, current_players):
         val1 = self._get_team_input_data(current['HID'], current['Date'])
         val2 = self._get_team_input_data(current['AID'], current['Date'])
 
@@ -199,224 +382,16 @@ class FourFactor:
             inverse_sigmoid(self.lr.predict_proba(np.array([val1]))[0, 1]) -
             inverse_sigmoid(self.lr.predict_proba(np.array([val2]))[0, 1])
         ]
-import math
-from collections import defaultdict
-
-class NateSilverElo:
-    def __init__(self):
-        self.elo_map = defaultdict(float)
-        self.last_season = -1
-
-    def _new_season(self):
-        for key in self.elo_map:
-            self.elo_map[key] *= 0.75
-
-    def _win_probability(self, x):
-        return 1 / (1 + (math.exp(-x / 175)))
-
-    def add_game(self, current):
-        season = current['Season']
-        home_id = current['HID']
-        away_id = current['AID']
-        home_score = current['HSC']
-        away_score = current['ASC']
-
-        if season > self.last_season:
-            self.last_season = season
-            self._new_season()
-
-        home_prediction = self._win_probability(self.elo_map[home_id] + 100 - self.elo_map[away_id])
-        away_prediction = 1 - home_prediction
-
-        k_factor = self.get_k_factor(home_score - away_score, self.elo_map[home_id] + 100, self.elo_map[away_id])
-
-        self.elo_map[home_id] += k_factor * (current['H'] - home_prediction)
-        self.elo_map[away_id] += k_factor * (current['A'] - away_prediction)
-
-    def get_input_data(self, home_id, away_id, season, date):
-        if season > self.last_season:
-            self.last_season = season
-            self._new_season()
-
-        return [
-            self.elo_map[home_id] - self.elo_map[away_id] + 100
-        ]
-
-    def get_k_factor(self, score_difference, elo_home, elo_away):
-        if score_difference > 0:
-            return 20 * (score_difference + 3) ** 0.8 / (7.5 + 0.006 * (elo_home - elo_away))
-        else:
-            return 20 * (-score_difference + 3) ** 0.8 / (7.5 + 0.006 * (elo_away - elo_home))
-
-import math
-import numpy as np
-import pandas as pd
-import json
-from datetime import datetime
-from sklearn.linear_model import LogisticRegression
-from collections import defaultdict
-
-def inverse_sigmoid(x):
-    return math.log(x / (1 - x))
-
-def sigmoid(x):
-    return 1 / (1 + math.exp(-x))
-
-def x1(delta, game_sigma):
-    return 1 / (game_sigma * 2.50662828) * np.exp(-0.5 * (delta / game_sigma) ** 2)
-
-def x2(delta, game_sigma):
-    return delta / game_sigma ** 2
-
-def x3(delta, game_sigma):
-    return -delta / game_sigma ** 2
-
-def x4(delta, game_sigma):
-    return -(game_sigma ** 2 - delta ** 2) / game_sigma ** 3
-
-class GradientDescent:
-    def __init__(self, num_teams=30, learning_rate=0.01, monthly_decay=0.75, season_reset_mult=0.8):
-        self.learning_rate = learning_rate
-        self.monthly_decay = monthly_decay
-        self.season_reset_mult = season_reset_mult
-        self.games = np.empty((0, 5), int)
-        self.home_advantage = 5
-        self.sigma = 12
-        self.team_mus = np.zeros(num_teams)
-        self.team_sigmas = np.ones(num_teams) * 128 / 3
-        self.my_team_id = {}
-        self.last_season = -1
-        self.fit_date = None
-
-    def _check_season(self, season):
-        if self.last_season != season:
-            self.last_season = season
-
-            self.team_sigmas = np.ones_like(self.team_sigmas) * (128 * self.season_reset_mult)
-
-    def _get_time_weights(self):
-        last_ts = self.games[-1, 0]
-
-        return self.monthly_decay ** (np.abs(self.games[:, 0] - last_ts) / 30 / 24 / 60 / 60 / 1000)
-
-    def _gradients(self):
-        weights = self._get_time_weights()
-
-        home_ratings = self.team_mus[self.games[:, 1]]
-        away_ratings = self.team_mus[self.games[:, 2]]
-
-        expectations_home = self.home_advantage + home_ratings - away_ratings
-
-        realities_home = self.games[:, 3] - self.games[:, 4]
-        realities_home = np.sign(realities_home) * np.abs(realities_home) ** 0.7
-        realities_away = self.games[:, 4] - self.games[:, 3]
-        realities_away = np.sign(realities_away) * np.abs(realities_away) ** 0.7
-
-        game_sigmas = np.sqrt(self.team_sigmas[self.games[:, 1]] ** 2 + self.team_sigmas[self.games[:, 2]] ** 2 + self.sigma ** 2)
-
-        mus_adjustments_home = x2(realities_home + away_ratings - self.home_advantage - home_ratings, game_sigmas) * weights
-        mus_adjustments_away = x2(realities_away + home_ratings + self.home_advantage - away_ratings, game_sigmas) * weights
-        grad_sigma = x4(realities_home - expectations_home, game_sigmas) * weights
-        grad_home_advantage = x3(realities_home - expectations_home, game_sigmas) * weights
-
-        grad_team_mus = np.zeros_like(self.team_mus)
-
-        np.add.at(grad_team_mus, self.games[:, 1], mus_adjustments_home)
-        np.add.at(grad_team_mus, self.games[:, 2], mus_adjustments_away)
-
-        return grad_team_mus, np.mean(grad_sigma), np.mean(grad_home_advantage)
-
-    def _calculate_objective(self):
-        weights = self._get_time_weights()
-
-        home_ratings = self.team_mus[self.games[:, 1]]
-        away_ratings = self.team_mus[self.games[:, 2]]
-
-        expectations_home = self.home_advantage + home_ratings - away_ratings
-
-        realities_home = self.games[:, 3] - self.games[:, 4]
-        realities_away = self.games[:, 4] - self.games[:, 3]
-
-        game_sigmas = np.sqrt(self.team_sigmas[self.games[:, 1]] ** 2 + self.team_sigmas[self.games[:, 2]] ** 2 + self.sigma ** 2)
-
-        home_objective = np.sum(x1(realities_home + away_ratings - self.home_advantage - home_ratings, game_sigmas) * weights)
-        away_objective = np.sum(x1(realities_away + home_ratings + self.home_advantage - away_ratings, game_sigmas) * weights)
-        sigma_objective = np.sum(x1(realities_home - expectations_home, game_sigmas) * weights) * 0.1
-
-        return home_objective + away_objective + sigma_objective
-
-    def _map_team_id(self, team_id):
-        if team_id not in self.my_team_id:
-            self.my_team_id[team_id] = len(self.my_team_id)
-
-        return self.my_team_id[team_id]
-
-    def _fit(self):
-        games_count = len(self.games)
-        best_objective = self._calculate_objective() / games_count
-        best_state = [self.team_mus, self.sigma, self.home_advantage]
-        countdown = 50
-        while countdown > 0:
-            countdown -= 1
-
-            grad_team_mus, grad_sigma, grad_home_advantage = self._gradients()
-
-            self.team_mus += self.learning_rate * grad_team_mus
-            self.sigma += self.learning_rate * grad_sigma
-            self.home_advantage -= self.learning_rate * grad_home_advantage
-
-            new_objective = self._calculate_objective() / games_count
-
-            if new_objective > best_objective + 0.000001:
-                best_objective = new_objective
-                best_state = [self.team_mus, self.sigma, self.home_advantage]
-                countdown = 50
-
-        self.team_mus, self.sigma, self.home_advantage = best_state
-
-    def add_game(self, current):
-        self._check_season(current['Season'])
-
-        timestamp = int(current['Date'].timestamp() * 1000)
-        team_home = self._map_team_id(current['HID'])
-        team_away = self._map_team_id(current['AID'])
-        score_home = current['HSC']
-        score_away = current['ASC']
-
-        self.games = np.vstack([self.games, np.array([timestamp, team_home, team_away, score_home, score_away])])
-        self.games = self.games[-6000:]
-
-        # Reduce sigma
-        self.team_sigmas[team_home] = 1 / math.sqrt(1 / self.team_sigmas[team_home] ** 2 + 1 / self.sigma ** 2)
-        self.team_sigmas[team_away] = 1 / math.sqrt(1 / self.team_sigmas[team_away] ** 2 + 1 / self.sigma ** 2)
-
-        self.fit_date = None
-
-    def get_input_data(self, home_id, away_id, season, date):
-        self._check_season(season)
-
-        if self.fit_date is None or self.fit_date != date:
-            self.fit_date = date
-
-            self._fit()
-
-        team_home = self._map_team_id(home_id)
-        team_away = self._map_team_id(away_id)
-
-        game_exp = self.home_advantage + self.team_mus[team_home] - self.team_mus[team_away]
-        game_sigma = math.sqrt(self.team_sigmas[team_home] ** 2 + self.team_sigmas[team_away] ** 2 + self.sigma ** 2)
-
-        return [
-            game_exp / game_sigma
-        ]
-
 from datetime import datetime
 
 class Exhaustion:
     def __init__(self):
         self.team_rest = {}
 
-    def add_game(self, current):
+    def pre_add_game(self, current, current_players):
+        pass
+
+    def add_game(self, current, current_players):
         date = current['Date']
         home_id = current['HID']
         away_id = current['AID']
@@ -442,7 +417,379 @@ class Exhaustion:
             factor
         ]
 
-import json
+
+import math
+import torch
+import copy
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+from torch.utils.data import DataLoader, TensorDataset
+from collections import defaultdict
+from datetime import datetime
+
+class PlayerRatingModel(nn.Module):
+    def __init__(self):
+        super(PlayerRatingModel, self).__init__()
+
+        self.layers = nn.Sequential(
+            nn.Linear(19, 12),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(12, 8),
+            nn.ReLU(),
+            nn.Linear(8, 4),
+            nn.ReLU()
+        )
+
+    def forward(self, player_stats, game_weight):
+        player_output = self.layers(player_stats).squeeze()
+
+        weighted_output = player_output * game_weight.unsqueeze(-1)
+
+        return torch.sum(weighted_output, axis=2) / (torch.sum(game_weight, axis=2).unsqueeze(-1) + 0.001)
+
+class GameRatingModel(nn.Module):
+    def __init__(self):
+        super(GameRatingModel, self).__init__()
+
+        # Instantiate the player rating model
+        self.player_model = PlayerRatingModel()
+        self.home_field_advantage = nn.Parameter(torch.tensor(4.5))
+        self.layers = nn.Sequential(
+            nn.Linear(8, 12),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(12, 1)
+        )
+
+    def forward(self, home_team_stats, away_team_stats, home_game_weights, away_game_weights,
+                home_play_times, away_play_times):
+        home_outputs = self.player_model(home_team_stats, home_game_weights)
+        away_outputs = self.player_model(away_team_stats, away_game_weights)
+
+        home_ratings = home_outputs * home_play_times.unsqueeze(-1)
+        away_ratings = away_outputs * away_play_times.unsqueeze(-1)
+
+        home_team_rating = torch.sum(home_ratings, axis=1)
+        away_team_rating = torch.sum(away_ratings, axis=1)
+
+        x = self.layers(torch.cat((home_team_rating, away_team_rating), dim=-1)).squeeze()
+
+        return x + self.home_field_advantage
+
+class NeuralNetwork:
+    def __init__(self, elo):
+        self.elo = elo
+
+        self.INPUTS_DIM = 19
+
+        self.model = GameRatingModel().to(torch.device('cpu'))
+        self.optimizer = optim.Adam(self.model.parameters(), lr=0.001, weight_decay=2e-5)
+        self.loss_fn = nn.MSELoss()
+        self.retrain_countdown = 0
+        self.first_training = True
+
+        self.team_rosters = {}
+        self.player_data = defaultdict(list)
+
+        self.home_inputs = np.empty((30000, 12, 26, self.INPUTS_DIM + 1), np.float32)
+        self.away_inputs = np.empty((30000, 12, 26, self.INPUTS_DIM + 1), np.float32)
+        self.home_playtimes = []
+        self.away_playtimes = []
+        self.outputs = []
+        self.training_data = 0
+
+    def _row_to_inputs(self, row, am_home, my_id, opponent_id, season):
+        return [
+            self.elo.get_team_strength(my_id, am_home, season) / 100,
+            self.elo.get_team_strength(opponent_id, not am_home, season) / 100,
+            1 if am_home else 0,        # Whether player is part of home team
+            row['MIN'],
+            row['FGM'],
+
+            row['FGA'],
+            row['FG3M'],
+            row['FG3A'],
+            row['FTM'],
+            row['FTA'],
+
+            row['ORB'],
+            row['DRB'],
+            row['RB'],
+            row['AST'],
+            row['STL'],
+
+            row['BLK'],
+            row['TOV'],
+            row['PF'],
+            row['PTS']
+        ]
+
+    def _get_team_roster(self, season, team_id, date):
+        rosters = self.team_rosters[season][team_id][-5:]
+
+        roster = defaultdict(int)
+
+        for c_roster in rosters:
+            for pid, mins in c_roster:
+                roster[pid] += mins
+
+        roster = sorted(roster.items(), key=lambda x: x[1], reverse=True)[:12]
+
+        while len(roster) < 12:
+            roster.append([-1, 0])
+
+        total_mins = sum(x[1] for x in roster)
+
+        return roster, total_mins
+
+    def _get_game_frame(self, season, date, home_id, away_id):
+        season_valid = season in self.team_rosters
+        home_valid = season_valid and home_id in self.team_rosters[season] and len(self.team_rosters[season][home_id]) >= 5
+        away_valid = season_valid and away_id in self.team_rosters[season] and len(self.team_rosters[season][away_id]) >= 5
+
+        if season_valid and home_valid and away_valid:
+            home_roster, home_total_mins = self._get_team_roster(season, home_id, date)
+            away_roster, away_total_mins = self._get_team_roster(season, away_id, date)
+
+            if home_total_mins >= 500 and away_total_mins >= 500:
+                c_home_inputs = []
+                c_home_playtimes = []
+                c_away_inputs = []
+                c_away_playtimes = []
+
+                for pid, mins in home_roster:
+                    c_player_data = []
+
+                    if pid != -1 and pid in self.player_data:
+                        c_player_data = copy.deepcopy(self.player_data[pid][-26:])
+
+                    for i in range(len(c_player_data)):
+                        point_date, point_mins = c_player_data[i][0]
+                        time_weight = 0.9965 ** abs((date - point_date).days)
+                        c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
+
+                    while len(c_player_data) < 26:
+                        c_player_data.append([0] * (self.INPUTS_DIM + 1))
+
+                    c_home_inputs.append(c_player_data)
+                    c_home_playtimes.append(mins / home_total_mins)
+
+                for pid, mins in away_roster:
+                    c_player_data = []
+
+                    if pid != -1 and pid in self.player_data:
+                        c_player_data = copy.deepcopy(self.player_data[pid][-26:])
+
+                    for i in range(len(c_player_data)):
+                        point_date, point_mins = c_player_data[i][0]
+                        time_weight = 0.9965 ** abs((date - point_date).days)
+                        c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
+
+                    while len(c_player_data) < 26:
+                        c_player_data.append([0] * (self.INPUTS_DIM + 1))
+
+                    c_away_inputs.append(c_player_data)
+                    c_away_playtimes.append(mins / away_total_mins)
+
+                return c_home_inputs, c_home_playtimes, c_away_inputs, c_away_playtimes
+
+        return None
+
+    def _train(self, dataloader):
+        self.model.train()
+        total_loss = 0.0
+        total_correct = 0
+        total_samples = 0
+
+        for batch_idx, (home_team_stats, away_team_stats, home_game_weights, away_game_weights, home_play_times, away_play_times, true_score_diff) in enumerate(dataloader):
+            # Forward pass
+            predicted_score_diff = self.model(home_team_stats, away_team_stats, home_game_weights, away_game_weights,
+                                        home_play_times, away_play_times)
+
+            # Compute loss
+            loss = self.loss_fn(predicted_score_diff, true_score_diff)
+
+            # Apply sample weights: weight decays with distance from the most recent sample
+            batch_size = true_score_diff.size(0)
+            weights = torch.tensor([0.99984 ** (len(dataloader.dataset) - (batch_idx * batch_size + i))
+                                    for i in range(batch_size)], dtype=torch.float32)
+            weights = weights.to(loss.device)
+            weighted_loss = (loss * weights).mean()  # Apply weights to loss
+
+            # Calculate binary accuracy (direction match)
+            predicted_sign = torch.sign(predicted_score_diff)
+            true_sign = torch.sign(true_score_diff)
+            correct = (predicted_sign == true_sign).sum().item()
+            total_correct += correct
+            total_samples += true_score_diff.size(0)
+
+            # Backpropagation and optimization
+            self.optimizer.zero_grad()
+            weighted_loss.backward()
+            self.optimizer.step()
+
+            # Accumulate loss
+            total_loss += weighted_loss.item()
+
+        # Calculate average loss and binary accuracy for this epoch
+        avg_loss = total_loss / len(dataloader)
+        accuracy = total_correct / total_samples
+        return avg_loss, accuracy
+
+    def pre_add_game(self, current, current_players):
+        season = current['Season']
+        home_id = current['HID']
+        away_id = current['AID']
+        home_score = current['HSC']
+        away_score = current['ASC']
+        date = current['Date']
+
+        game_frame = self._get_game_frame(season, date, home_id, away_id)
+
+        if game_frame is not None:
+            c_home_inputs, c_home_playtimes, c_away_inputs, c_away_playtimes = game_frame
+
+            self.home_inputs[self.training_data] = np.array(c_home_inputs, np.float32)
+            self.away_inputs[self.training_data] = np.array(c_away_inputs, np.float32)
+            self.home_playtimes.append(c_home_playtimes)
+            self.away_playtimes.append(c_away_playtimes)
+            self.outputs.append((abs(home_score - away_score) + 3) ** 0.7 * (1 if home_score > away_score else -1))
+            self.retrain_countdown -= 1
+            self.training_data += 1
+
+    def add_game(self, current, current_players):
+        season = current['Season']
+        home_id = current['HID']
+        away_id = current['AID']
+        date = current['Date']
+
+        home_players = current_players[current_players['Team'] == home_id]
+        away_players = current_players[current_players['Team'] == away_id]
+
+        if season not in self.team_rosters:
+            self.team_rosters[season] = {}
+
+        if home_id not in self.team_rosters[season]:
+            self.team_rosters[season][home_id] = []
+
+        if away_id not in self.team_rosters[season]:
+            self.team_rosters[season][away_id] = []
+
+        self.team_rosters[season][home_id].append([[x['Player'], x['MIN']] for _, x in home_players.iterrows()])
+        self.team_rosters[season][away_id].append([[x['Player'], x['MIN']] for _, x in away_players.iterrows()])
+
+        mapped_home_players = [{
+            'pid': row['Player'],
+            'mins': row['MIN'],
+            'inputs': self._row_to_inputs(row, True, home_id, away_id, season)
+        } for _, row in home_players.iterrows()]
+        mapped_away_players = [{
+            'pid': row['Player'],
+            'mins': row['MIN'],
+            'inputs': self._row_to_inputs(row, False, away_id, home_id, season)
+        } for _, row in away_players.iterrows()]
+
+        for data in [*mapped_home_players, *mapped_away_players]:
+            if not any(math.isnan(x) for x in data['inputs']):
+                self.player_data[data['pid']].append([[date, data['mins']], *data['inputs']])
+
+    def get_input_data(self, home_id, away_id, season, date):
+        game_frame = self._get_game_frame(season, date, home_id, away_id)
+
+        if game_frame is None:
+            return None
+
+        if self.retrain_countdown <= 0:
+            self.retrain_countdown = 2500
+
+            home_team_stats = torch.from_numpy(self.home_inputs[:self.training_data, :, :, 1:])
+            away_team_stats = torch.from_numpy(self.away_inputs[:self.training_data, :, :, 1:])
+            home_game_weights = torch.from_numpy(self.home_inputs[:self.training_data, :, :, 0])
+            away_game_weights = torch.from_numpy(self.away_inputs[:self.training_data, :, :, 0])
+            home_play_times = torch.tensor(np.array(self.home_playtimes).astype(np.float32), dtype=torch.float32)
+            away_play_times = torch.tensor(np.array(self.away_playtimes).astype(np.float32), dtype=torch.float32)
+            true_score_diff = torch.tensor(np.array(self.outputs), dtype=torch.float32)
+
+            # Prepare DataLoader
+            train_data = TensorDataset(home_team_stats, away_team_stats, home_game_weights, away_game_weights, home_play_times, away_play_times, true_score_diff)
+            train_loader = DataLoader(train_data, batch_size=16, shuffle=True)
+
+            num_epochs = 40 if self.first_training else 10
+            self.first_training = False
+            for epoch in range(num_epochs):
+                train_loss, train_accuracy = self._train(train_loader)
+
+        c_home_inputs, c_home_playtimes, c_away_inputs, c_away_playtimes = game_frame
+        np_array_home_inputs = np.array(c_home_inputs).astype(np.float32)
+        np_array_away_inputs = np.array(c_away_inputs).astype(np.float32)
+
+        home_team_stats = torch.tensor(np_array_home_inputs[:, :, 1:], dtype=torch.float32).unsqueeze(0)
+        away_team_stats = torch.tensor(np_array_away_inputs[:, :, 1:], dtype=torch.float32).unsqueeze(0)
+        home_game_weights = torch.tensor(np_array_home_inputs[:, :, 0], dtype=torch.float32).unsqueeze(0)
+        away_game_weights = torch.tensor(np_array_away_inputs[:, :, 0], dtype=torch.float32).unsqueeze(0)
+        home_play_times = torch.tensor(np.array(c_home_playtimes).astype(np.float32), dtype=torch.float32).unsqueeze(0)
+        away_play_times = torch.tensor(np.array(c_away_playtimes).astype(np.float32), dtype=torch.float32).unsqueeze(0)
+
+        self.model.eval()
+
+        with torch.no_grad():
+            prediction = self.model(home_team_stats, away_team_stats, home_game_weights, away_game_weights, home_play_times, away_play_times)
+
+        return [
+            prediction.item()
+        ]
+
+
+
+from collections import defaultdict
+from datetime import datetime
+
+class Pythagorean:
+    def __init__(self, power=16.5, regularization=120, daily_decay=0.992):
+        self.power = power
+        self.regularization = regularization
+        self.daily_decay = daily_decay
+
+        self.team_map = defaultdict(list)
+
+    def pre_add_game(self, current, current_players):
+        pass
+
+    def add_game(self, current, current_players):
+        date = current['Date']
+        home_id = current['HID']
+        away_id = current['AID']
+        home_score = current['HSC']
+        away_score = current['ASC']
+
+        if type(date) == 'str':
+            date = datetime.strptime(date, '%Y-%m-%d')
+
+        home_difference = abs(home_score - away_score) ** self.power * (1 if home_score > away_score else -1)
+        away_difference = -home_difference
+
+        self.team_map[home_id].append([date, home_score, away_score])
+        self.team_map[away_id].append([date, away_score, home_score])
+
+    def _get_weighted(self, team_id, idx, date):
+        return sum([x[idx] * (self.daily_decay ** abs((date - x[0]).days)) for x in self.team_map[team_id][-100:]])
+
+    def get_input_data(self, home_id, away_id, season, date):
+        if type(date) == 'str':
+            date = datetime.strptime(date, '%Y-%m-%d')
+
+        home_scored = self.regularization + self._get_weighted(home_id, 1, date)
+        home_allowed = self.regularization + self._get_weighted(home_id, 2, date)
+        away_scored = self.regularization + self._get_weighted(away_id, 1, date)
+        away_allowed = self.regularization + self._get_weighted(away_id, 2, date)
+
+        return [
+            (home_scored ** self.power) / (home_scored ** self.power + home_allowed ** self.power),
+            (away_scored ** self.power) / (away_scored ** self.power + away_allowed ** self.power)
+        ]
+
 import math
 import numpy as np
 import pandas as pd
@@ -451,13 +798,15 @@ from sklearn.linear_model import LogisticRegression
 class Model:
     def __init__(self):
         # Hyperparameters
-        self.ensamble_required_n = 2000
+        self.ensamble_required_n = 3000
+        nate_silver_elo = NateSilverElo()
         self.model_list = [
-            Pythagorean(),
-            FourFactor(),
-            NateSilverElo(),
-            GradientDescent(),
-            Exhaustion()
+            Pythagorean(),                  # 0.022865
+            FourFactor(),                   # 0.001608
+            GradientDescent(),              # 0.031539
+            Exhaustion(),                   # -0.000207
+            nate_silver_elo,                # 0.762238
+            NeuralNetwork(nate_silver_elo)  # -0.004663
         ]
         # End
 
@@ -547,14 +896,15 @@ class Model:
                 'coefs': self.coef_map[idx]
             })
 
-    def _game_increment(self, idx, current):
+    def _game_increment(self, idx, current, current_players):
         season = current['Season']
         date = current['Date']
         home_id = current['HID']
         away_id = current['AID']
         home_win = current['H']
+        year = int(str(current['Date'])[0:4])
 
-        if int(str(current['Date'])[0:4]) >= 1990:
+        if year >= 1994:
             input_arr = self._get_input_features(home_id, away_id, season, date)
 
             if input_arr is not None:
@@ -563,16 +913,27 @@ class Model:
 
         self._handle_metrics(idx, current)
 
-        for model in self.model_list:
-            model.add_game(current)
+        if year >= 1986:
+            # Let the models create training frames before new data arrives
+            for model in self.model_list:
+                model.pre_add_game(current, current_players)
+
+            # Add new data to the models
+            for model in self.model_list:
+                model.add_game(current, current_players)
 
     def place_bets(self, summary: pd.DataFrame, opps: pd.DataFrame, inc: tuple[pd.DataFrame, pd.DataFrame]):
         games_increment, players_increment = inc
 
+        done = 0
+        total = len(games_increment)
+
         for idx in games_increment.index:
             current = games_increment.loc[idx]
+            current_players = players_increment[(players_increment['Game'] == idx) & (players_increment['MIN'] >= 3)]
 
-            self._game_increment(idx, current)
+            self._game_increment(idx, current, current_players)
+            done += 1
 
         min_bet = summary.iloc[0]['Min_bet']
         max_bet = summary.iloc[0]['Max_bet']
@@ -588,44 +949,45 @@ class Model:
             home_id = current['HID']
             away_id = current['AID']
 
-            input_arr = self._get_input_features(home_id, away_id, season, date)
+            if len(self.past_pred) >= self.ensamble_required_n:
+                input_arr = self._get_input_features(home_id, away_id, season, date)
 
-            if input_arr is not None and len(self.past_pred) >= self.ensamble_required_n:
-                if self.ensamble_retrain <= 0:
-                    self.ensamble_retrain = 200
-                    np_array = np.array(self.past_pred)
-                    sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
-                    self.ensamble = LogisticRegression(max_iter=10000)
-                    self.ensamble.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights[::-1])
+                if input_arr is not None:
+                    if self.ensamble_retrain <= 0:
+                        self.ensamble_retrain = 300
+                        np_array = np.array(self.past_pred)
+                        sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
+                        self.ensamble = LogisticRegression(max_iter=10000)
+                        self.ensamble.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights[::-1])
 
-                self.bet_metrics['opps'] += 1
+                    self.bet_metrics['opps'] += 1
 
-                pred = self.ensamble.predict_proba(np.array([input_arr]))[0, 1]
+                    pred = self.ensamble.predict_proba(np.array([input_arr]))[0, 1]
 
-                self.prediction_map[i] = pred
-                self.input_map[i] = input_arr
-                self.coef_map[i] = [self.ensamble.intercept_.tolist(), *self.ensamble.coef_.tolist()]
+                    self.prediction_map[i] = pred
+                    self.input_map[i] = input_arr
+                    self.coef_map[i] = [self.ensamble.intercept_.tolist(), *self.ensamble.coef_.tolist()]
 
-                odds_home = current['OddsH']
-                odds_away = current['OddsA']
+                    odds_home = current['OddsH']
+                    odds_away = current['OddsA']
 
-                min_home_odds = (1 / pred - 1) * 1.1 + 1
-                min_away_odds = (1 / (1 - pred) - 1) * 1.1 + 1
+                    min_home_odds = (1 / pred - 1) * 1.0 + 1 + 0.02
+                    min_away_odds = (1 / (1 - pred) - 1) * 1.0 + 1 + 0.02
 
-                if odds_home >= min_home_odds:
-                    bets.at[i, 'BetH'] = my_bet
+                    if odds_home >= min_home_odds:
+                        bets.at[i, 'BetH'] = my_bet
 
-                    self.bet_metrics['exp_pnl'] += pred * odds_home - 1
-                    self.bet_metrics['volume'] += my_bet
-                    self.bet_metrics['count'] += 1
-                    self.bet_metrics['sum_odds'] += odds_home
+                        self.bet_metrics['exp_pnl'] += pred * odds_home - 1
+                        self.bet_metrics['volume'] += my_bet
+                        self.bet_metrics['count'] += 1
+                        self.bet_metrics['sum_odds'] += odds_home
 
-                if odds_away >= min_away_odds:
-                    bets.at[i, 'BetA'] = my_bet
+                    if odds_away >= min_away_odds:
+                        bets.at[i, 'BetA'] = my_bet
 
-                    self.bet_metrics['exp_pnl'] += (1 - pred) * odds_away - 1
-                    self.bet_metrics['volume'] += my_bet
-                    self.bet_metrics['count'] += 1
-                    self.bet_metrics['sum_odds'] += odds_away
+                        self.bet_metrics['exp_pnl'] += (1 - pred) * odds_away - 1
+                        self.bet_metrics['volume'] += my_bet
+                        self.bet_metrics['count'] += 1
+                        self.bet_metrics['sum_odds'] += odds_away
 
         return bets
