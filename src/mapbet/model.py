@@ -5,23 +5,8 @@ import pandas as pd
 from datetime import datetime
 from sklearn.linear_model import LogisticRegression
 
-def inverse_sigmoid(x):
-    return math.log(x / (1 - x))
-
 with open('temp/predictions.json', 'r') as f:
     predictions = json.load(f)
-
-with open('src/meta_model/data.json', 'r') as f:
-    all_data = json.load(f)
-
-predictions = {
-    item['index']: (
-        [
-            *item['inputs'],
-            predictions[item['index']]
-        ] if item['index'] in predictions else None
-    ) for item in all_data
-}
 
 class Model:
     def __init__(self):
@@ -30,8 +15,6 @@ class Model:
         self.pred_list = []
         self.corr_me = []
         self.corr_mkt = []
-
-        self.roi_dist = []
 
         self.metrics = {
             'my_ba': 0,
@@ -71,9 +54,6 @@ class Model:
         with open('src/mapbet/data.json', 'w') as json_file:
             json.dump(self.pred_list, json_file, indent=2)
 
-        with open('src/mapbet/roi_dist.json', 'w') as json_file:
-            json.dump(self.roi_dist, json_file, indent=2)
-
         min_bet = summary.iloc[0]['Min_bet']
         max_bet = summary.iloc[0]['Max_bet']
 
@@ -91,7 +71,7 @@ class Model:
             str_i = str(i)
 
             if str_i in predictions and predictions[str_i] is not None:
-                self.past_pred.append([*predictions[str_i], home_win])
+                self.past_pred.append([predictions[str_i], home_win])
 
             if i in self.prediction_map:
                 if self.prediction_map[i] == 0.5:
@@ -138,7 +118,7 @@ class Model:
                     sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
                     lr = LogisticRegression(max_iter=10000)
                     lr.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights[::-1])
-                    pred = lr.predict_proba(np.array([predictions[str_i]]))[0, 1]
+                    pred = lr.predict_proba(np.array([[predictions[str_i]]]))[0, 1]
 
                     self.prediction_map[i] = pred
 
@@ -148,14 +128,8 @@ class Model:
                     roi1 = pred * odds_home
                     roi2 = (1 - pred) * odds_away
 
-                    max_roi = max(roi1, roi2)
-
-                    print(f'\n Estimated ROI: {round(max_roi - 1.0, 3)}')
-
-                    self.roi_dist.append(max_roi - 1.0)
-
-                    min_home_odds = (1 / pred - 1) * 1.0 + 1 + 0.02
-                    min_away_odds = (1 / (1 - pred) - 1) * 1.0 + 1 + 0.02
+                    min_home_odds = (1 / pred - 1) * 1.1 + 1 + 0.05
+                    min_away_odds = (1 / (1 - pred) - 1) * 1.1 + 1 + 0.05
 
                     if odds_home >= min_home_odds:
                         bets.at[i, 'BetH'] = min_bet
