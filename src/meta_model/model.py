@@ -17,16 +17,15 @@ class Model:
         self.debug_mode = debug_mode
 
         # Hyperparameters
-        self.ensamble_required_n = 2000
+        self.ensamble_required_n = 3000
         nate_silver_elo = NateSilverElo()
         self.model_list = [
-            Template(),
-            Pythagorean(),
-            FourFactor(),
-            GradientDescent(),
-            Exhaustion(),
-            nate_silver_elo,
-            NeuralNetwork(nate_silver_elo)
+            Pythagorean(),                  # 0.022865
+            FourFactor(),                   # 0.001608
+            GradientDescent(),              # 0.031539
+            Exhaustion(),                   # -0.000207
+            nate_silver_elo,                # 0.762238
+            NeuralNetwork(nate_silver_elo)  # -0.004663
         ]
         # End
 
@@ -123,7 +122,7 @@ class Model:
         away_id = current['AID']
         home_win = current['H']
 
-        if int(str(current['Date'])[0:4]) >= 1990:
+        if int(str(current['Date'])[0:4]) >= 1994:
             input_arr = self._get_input_features(home_id, away_id, season, date)
 
             if input_arr is not None:
@@ -132,13 +131,14 @@ class Model:
 
         self._handle_metrics(idx, current)
 
-        # Let the models create training frames before new data arrives
-        for model in self.model_list:
-            model.pre_add_game(current, current_players)
+        if int(str(current['Date'])[0:4]) >= 1986:
+            # Let the models create training frames before new data arrives
+            for model in self.model_list:
+                model.pre_add_game(current, current_players)
 
-        # Add new data to the models
-        for model in self.model_list:
-            model.add_game(current, current_players)
+            # Add new data to the models
+            for model in self.model_list:
+                model.add_game(current, current_players)
 
     def _print_metrics(self):
         print('')
@@ -197,7 +197,7 @@ class Model:
 
                 if input_arr is not None:
                     if self.ensamble_retrain <= 0:
-                        self.ensamble_retrain = 200
+                        self.ensamble_retrain = 300
                         np_array = np.array(self.past_pred)
                         sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
                         self.ensamble = LogisticRegression(max_iter=10000)

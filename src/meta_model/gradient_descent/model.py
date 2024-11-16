@@ -25,7 +25,7 @@ def x4(delta, game_sigma):
     return -(game_sigma ** 2 - delta ** 2) / game_sigma ** 3
 
 class GradientDescent:
-    def __init__(self, num_teams=30, learning_rate=0.01, monthly_decay=0.75, season_reset_mult=0.8):
+    def __init__(self, num_teams=30, learning_rate=0.03, monthly_decay=0.75, season_reset_mult=0.7):
         self.learning_rate = learning_rate
         self.monthly_decay = monthly_decay
         self.season_reset_mult = season_reset_mult
@@ -33,7 +33,7 @@ class GradientDescent:
         self.home_advantage = 5
         self.sigma = 12
         self.team_mus = np.zeros(num_teams)
-        self.team_sigmas = np.ones(num_teams) * 128 / 3
+        self.team_sigmas = np.ones(num_teams) * 42
         self.my_team_id = {}
         self.last_season = -1
         self.fit_date = None
@@ -42,7 +42,7 @@ class GradientDescent:
         if self.last_season != season:
             self.last_season = season
 
-            self.team_sigmas = np.ones_like(self.team_sigmas) * (128 * self.season_reset_mult)
+            self.team_sigmas = np.ones_like(self.team_sigmas) * (42 * self.season_reset_mult)
 
     def _get_time_weights(self):
         last_ts = self.games[-1, 0]
@@ -58,9 +58,9 @@ class GradientDescent:
         expectations_home = self.home_advantage + home_ratings - away_ratings
 
         realities_home = self.games[:, 3] - self.games[:, 4]
-        realities_home = np.sign(realities_home) * np.abs(realities_home) ** 0.7
+        realities_home = np.sign(realities_home) * (np.abs(realities_home) + 3.0) ** 0.7
         realities_away = self.games[:, 4] - self.games[:, 3]
-        realities_away = np.sign(realities_away) * np.abs(realities_away) ** 0.7
+        realities_away = np.sign(realities_away) * (np.abs(realities_away) + 3.0) ** 0.7
 
         game_sigmas = np.sqrt(self.team_sigmas[self.games[:, 1]] ** 2 + self.team_sigmas[self.games[:, 2]] ** 2 + self.sigma ** 2)
 
@@ -105,7 +105,7 @@ class GradientDescent:
         games_count = len(self.games)
         best_objective = self._calculate_objective() / games_count
         best_state = [self.team_mus, self.sigma, self.home_advantage]
-        countdown = 50
+        countdown = 30
         while countdown > 0:
             countdown -= 1
 
@@ -118,10 +118,10 @@ class GradientDescent:
             new_objective = self._calculate_objective() / games_count
 
             print(new_objective, end='\r')
-            if new_objective > best_objective + 0.000001:
+            if new_objective > best_objective + 0.0001:
                 best_objective = new_objective
                 best_state = [self.team_mus, self.sigma, self.home_advantage]
-                countdown = 50
+                countdown = 30
 
         self.team_mus, self.sigma, self.home_advantage = best_state
 

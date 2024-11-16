@@ -73,8 +73,8 @@ class NeuralNetwork:
         self.team_rosters = {}
         self.player_data = defaultdict(list)
 
-        self.home_inputs = np.empty((50000, 12, 40, self.INPUTS_DIM + 1), np.float32)
-        self.away_inputs = np.empty((50000, 12, 40, self.INPUTS_DIM + 1), np.float32)
+        self.home_inputs = np.empty((30000, 12, 40, self.INPUTS_DIM + 1), np.float32)
+        self.away_inputs = np.empty((30000, 12, 40, self.INPUTS_DIM + 1), np.float32)
         self.home_playtimes = []
         self.away_playtimes = []
         self.outputs = []
@@ -282,7 +282,7 @@ class NeuralNetwork:
             return None
 
         if self.retrain_countdown <= 0:
-            self.retrain_countdown = 500
+            self.retrain_countdown = 2500
 
             print('\nRetraining! Preparing dataset...')
 
