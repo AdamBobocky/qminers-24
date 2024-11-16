@@ -5,8 +5,6 @@ import torch.optim as optim
 import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
 
-enabled_log = False
-
 with open('temp/keys.json', 'r') as f:
     keys = json.load(f)
 
@@ -14,15 +12,14 @@ class PlayerRatingModel(nn.Module):
     def __init__(self):
         super(PlayerRatingModel, self).__init__()
 
-        # self.layers = nn.Sequential(
-        #     nn.Linear(21, 1)
-        # )
         self.layers = nn.Sequential(
-            nn.Linear(22, 12),
+            nn.Linear(19, 64),
             nn.ReLU(),
-            nn.Linear(12, 8),
+            nn.Dropout(0.3),
+            nn.Linear(64, 12),
             nn.ReLU(),
-            nn.Linear(8, 1)
+            nn.Dropout(0.1),
+            nn.Linear(12, 1)
         )
 
     def forward(self, player_stats, game_weight):
@@ -116,7 +113,7 @@ def validate(model, dataloader, loss_fn, device):
 # Training setup
 device = torch.device('cpu')
 model = GameRatingModel().to(device)
-optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=2e-5)
+optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
 loss_fn = nn.MSELoss()
 val_loss_fn = nn.MSELoss()
 
@@ -136,23 +133,22 @@ true_score_diff = torch.tensor(np_true_score_diff, dtype=torch.float32)
 
 # Prepare DataLoader
 split_index = int(0.7 * len(home_team_stats))
-train_data = TensorDataset(home_team_stats[:split_index], away_team_stats[:split_index],
-                           home_game_weights[:split_index], away_game_weights[:split_index],
-                           home_play_times[:split_index], away_play_times[:split_index],
-                           true_score_diff[:split_index])
-val_data = TensorDataset(home_team_stats[split_index:], away_team_stats[split_index:],
-                         home_game_weights[split_index:], away_game_weights[split_index:],
-                         home_play_times[split_index:], away_play_times[split_index:],
-                         true_score_diff[split_index:])
-train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
-val_loader = DataLoader(val_data, batch_size=64, shuffle=False)
 
 # Training loop
-num_epochs = 100
-for epoch in range(num_epochs):
-    if epoch > 4:
-        enabled_log = True
+num_epochs = 40
 
+train_data = TensorDataset(home_team_stats_copy[:split_index], away_team_stats_copy[:split_index],
+                        home_game_weights[:split_index], away_game_weights[:split_index],
+                        home_play_times[:split_index], away_play_times[:split_index],
+                        true_score_diff[:split_index])
+val_data = TensorDataset(home_team_stats_copy[split_index:], away_team_stats_copy[split_index:],
+                        home_game_weights[split_index:], away_game_weights[split_index:],
+                        home_play_times[split_index:], away_play_times[split_index:],
+                        true_score_diff[split_index:])
+train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
+val_loader = DataLoader(val_data, batch_size=32, shuffle=False)
+
+for epoch in range(num_epochs):
     train_loss, train_accuracy = train(model, train_loader, optimizer, loss_fn, device)
     val_loss, val_accuracy, val_predictions = validate(model, val_loader, val_loss_fn, device)
     print(f'Epoch {epoch+1} / {num_epochs}, train_loss: {train_loss:.4f}, train_accuracy: {train_accuracy:.4f}, val_loss: {val_loss:.4f}, val_accuracy: {val_accuracy:.4f}')

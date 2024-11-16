@@ -67,35 +67,32 @@ total_games = len(games_df)
 
 elo = NateSilverElo()
 
-INPUTS_DIM = 22
+INPUTS_DIM = 19
 
 def row_to_inputs(row, am_home, my_id, opponent_id, season):
     return [
         elo.get_team_strength(my_id, am_home, season) / 100,
         elo.get_team_strength(opponent_id, not am_home, season) / 100,
-        season / 10,
         1 if am_home else 0,        # Whether player is part of home team
         row['MIN'],
-        row['PTS'] / row['MIN'],    # Points
-        row['ORB'] / row['MIN'],    # Offensive rebounds
+        row['FGM'],
 
-        row['DRB'] / row['MIN'],    # Defensive rebounds
-        row['AST'] / row['MIN'],    # Assists
-        row['STL'] / row['MIN'],    # Steals
-        row['BLK'] / row['MIN'],    # Blocks
-        row['FGA'] / row['MIN'],    # Field goal attempts
+        row['FGA'],
+        row['FG3M'],
+        row['FG3A'],
+        row['FTM'],
+        row['FTA'],
 
-        row['FTA'] / row['MIN'],    # Free throw attempts
-        row['TOV'] / row['MIN'],    # Turnovers
-        row['PF'] / row['MIN'],     # Personal fouls
-        row['FG3M'] / (row['FG3A'] + 0.00001),
-        row['FTM'] / (row['FTA'] + 0.00001),
+        row['ORB'],
+        row['DRB'],
+        row['RB'],
+        row['AST'],
+        row['STL'],
 
-        (row['FGM'] + 0.5 * row['FG3M']) / (row['FGA'] + 0.00001),
-        row['TOV'] / (row['FGA'] + 0.44 * row['FTA'] + row['TOV'] + 0.00001),
-        row['ORB'] / (row['ORB'] + row['DRB'] + 0.00001),
-        row['FTA'] / (row['FGA'] + 0.00001),
-        row['PTS'] / (2 * row['FGA'] + 0.44 * row['FTA'] + 0.00001)    # TS%
+        row['BLK'],
+        row['TOV'],
+        row['PF'],
+        row['PTS']
     ]
 
 for index, current in games_df.iterrows():
@@ -122,18 +119,18 @@ for index, current in games_df.iterrows():
             for pid, mins in roster:
                 away_roster[pid] += mins
 
-        home_roster = sorted(home_roster.items(), key=lambda x: x[1], reverse=True)[:15]
-        away_roster = sorted(away_roster.items(), key=lambda x: x[1], reverse=True)[:15]
+        home_roster = sorted(home_roster.items(), key=lambda x: x[1], reverse=True)[:12]
+        away_roster = sorted(away_roster.items(), key=lambda x: x[1], reverse=True)[:12]
 
-        while len(home_roster) < 15:
+        while len(home_roster) < 12:
             home_roster.append([-1, 0])
-        while len(away_roster) < 15:
+        while len(away_roster) < 12:
             away_roster.append([-1, 0])
 
         home_total_mins = sum(x[1] for x in home_roster)
         away_total_mins = sum(x[1] for x in away_roster)
 
-        # home_roster and away_roster both are of length 15, contain the players who play the most
+        # home_roster and away_roster both are of length 12, contain the players who play the most
 
         if home_total_mins >= 500 and away_total_mins >= 500:
             c_home_inputs = []
@@ -149,7 +146,7 @@ for index, current in games_df.iterrows():
 
                 for i in range(len(c_player_data)):
                     point_date, point_mins = c_player_data[i][0]
-                    time_weight = 0.9955 ** abs((date - point_date).days)
+                    time_weight = 0.9965 ** abs((date - point_date).days)
                     c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
                 while len(c_player_data) < 40:
@@ -166,7 +163,7 @@ for index, current in games_df.iterrows():
 
                 for i in range(len(c_player_data)):
                     point_date, point_mins = c_player_data[i][0]
-                    time_weight = 0.9955 ** abs((date - point_date).days)
+                    time_weight = 0.9965 ** abs((date - point_date).days)
                     c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
                 while len(c_player_data) < 40:
