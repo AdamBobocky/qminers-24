@@ -1,5 +1,6 @@
 temp/**
 !temp/predictions.json
+!temp/team_predictions.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
