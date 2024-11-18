@@ -11,6 +11,12 @@ from gradient_descent.model import GradientDescent
 from exhaustion.model import Exhaustion
 from neural_network.model import NeuralNetwork
 
+def inverse_sigmoid(x):
+    return math.log(x / (1 - x))
+
+def sigmoid(x):
+    return 1 / (1 + math.exp(-x))
+
 class Model:
     def __init__(self, debug_mode=False):
         self.debug_mode = debug_mode
@@ -19,12 +25,12 @@ class Model:
         self.ensamble_required_n = 3000
         nate_silver_elo = NateSilverElo()
         self.model_list = [
-            Pythagorean(),                  # 0.022865
-            FourFactor(),                   # 0.001608
-            GradientDescent(),              # 0.031539
-            Exhaustion(),                   # -0.000207
-            nate_silver_elo,                # 0.762238
-            NeuralNetwork(nate_silver_elo)  # -0.004663
+            Pythagorean(),
+            FourFactor(),
+            GradientDescent(),
+            Exhaustion(),
+            nate_silver_elo,
+            NeuralNetwork(nate_silver_elo)
         ]
         # End
 
@@ -192,6 +198,7 @@ class Model:
             date = current['Date']
             home_id = current['HID']
             away_id = current['AID']
+            playoff = current['POFF'] == 1
 
             if len(self.past_pred) >= self.ensamble_required_n:
                 input_arr = self._get_input_features(home_id, away_id, season, date)
@@ -212,16 +219,19 @@ class Model:
                     self.input_map[i] = input_arr
                     self.coef_map[i] = [self.ensamble.intercept_.tolist(), *self.ensamble.coef_.tolist()]
 
+                    # Adjust for playoffs
+                    adj_pred = sigmoid((inverse_sigmoid(pred) + 0.2) * 1.1) if playoff else pred
+
                     odds_home = current['OddsH']
                     odds_away = current['OddsA']
 
-                    min_home_odds = (1 / pred - 1) * 1.0 + 1 + 0.02
-                    min_away_odds = (1 / (1 - pred) - 1) * 1.0 + 1 + 0.02
+                    min_home_odds = (1 / adj_pred - 1) * 1.0 + 1 + 0.02
+                    min_away_odds = (1 / (1 - adj_pred) - 1) * 1.0 + 1 + 0.02
 
                     if odds_home >= min_home_odds:
                         bets.at[i, 'BetH'] = my_bet
 
-                        self.bet_metrics['exp_pnl'] += pred * odds_home - 1
+                        self.bet_metrics['exp_pnl'] += adj_pred * odds_home - 1
                         self.bet_metrics['volume'] += my_bet
                         self.bet_metrics['count'] += 1
                         self.bet_metrics['sum_odds'] += odds_home
@@ -229,7 +239,7 @@ class Model:
                     if odds_away >= min_away_odds:
                         bets.at[i, 'BetA'] = my_bet
 
-                        self.bet_metrics['exp_pnl'] += (1 - pred) * odds_away - 1
+                        self.bet_metrics['exp_pnl'] += (1 - adj_pred) * odds_away - 1
                         self.bet_metrics['volume'] += my_bet
                         self.bet_metrics['count'] += 1
                         self.bet_metrics['sum_odds'] += odds_away

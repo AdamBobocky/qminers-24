@@ -738,8 +738,8 @@ class NeuralNetwork:
 
     def _get_game_frame(self, season, date, home_id, away_id):
         season_valid = season in self.team_rosters
-        home_valid = season_valid and home_id in self.team_rosters[season] and len(self.team_rosters[season][home_id]) >= 5
-        away_valid = season_valid and away_id in self.team_rosters[season] and len(self.team_rosters[season][away_id]) >= 5
+        home_valid = season_valid and home_id in self.team_rosters[season] and len(self.team_rosters[season][home_id]) >= 3
+        away_valid = season_valid and away_id in self.team_rosters[season] and len(self.team_rosters[season][away_id]) >= 3
 
         if season_valid and home_valid and away_valid:
             home_roster, home_total_mins = self._get_team_roster(season, home_id, date)
@@ -755,7 +755,7 @@ class NeuralNetwork:
                     c_player_data = []
 
                     if pid != -1 and pid in self.player_data:
-                        c_player_data = copy.deepcopy(self.player_data[pid][-40:])
+                        c_player_data = copy.deepcopy(self.player_data[pid])
 
                     for i in range(len(c_player_data)):
                         point_date, point_mins = c_player_data[i][0]
@@ -772,7 +772,7 @@ class NeuralNetwork:
                     c_player_data = []
 
                     if pid != -1 and pid in self.player_data:
-                        c_player_data = copy.deepcopy(self.player_data[pid][-40:])
+                        c_player_data = copy.deepcopy(self.player_data[pid])
 
                     for i in range(len(c_player_data)):
                         point_date, point_mins = c_player_data[i][0]
@@ -831,12 +831,13 @@ class NeuralNetwork:
     #     return avg_loss, accuracy
 
     def pre_add_game(self, current, current_players):
-        season = current['Season']
-        home_id = current['HID']
-        away_id = current['AID']
-        home_score = current['HSC']
-        away_score = current['ASC']
-        date = current['Date']
+        pass
+        # season = current['Season']
+        # home_id = current['HID']
+        # away_id = current['AID']
+        # home_score = current['HSC']
+        # away_score = current['ASC']
+        # date = current['Date']
 
         # game_frame = self._get_game_frame(season, date, home_id, away_id)
 
@@ -886,6 +887,7 @@ class NeuralNetwork:
         for data in [*mapped_home_players, *mapped_away_players]:
             if not any(math.isnan(x) for x in data['inputs']):
                 self.player_data[data['pid']].append([[date, data['mins']], *data['inputs']])
+                self.player_data[data['pid']] = self.player_data[data['pid']][-40:]
 
     def get_input_data(self, home_id, away_id, season, date):
         game_frame = self._get_game_frame(season, date, home_id, away_id)
