@@ -25,14 +25,16 @@ class Model:
         self.ensamble_required_n = 2000
         nate_silver_elo = NateSilverElo()
         self.model_list = [
-            Pythagorean(),
-            FourFactor(),
-            GradientDescent(),
-            Exhaustion(),
-            nate_silver_elo,
+            Pythagorean(),      # 0.8464013687751296, -0.06697869116809001
+            FourFactor(),       # -0.037466710615323806
+            GradientDescent(),  # 0.8539410540350695
+            Exhaustion(),       # -0.30556362733411674
+            nate_silver_elo,    # 0.002608191859624124
             # NeuralNetwork(nate_silver_elo)
         ]
         # End
+
+        self.coef_list = []
 
         self.prediction_map = {}
         self.input_map = {}
@@ -210,6 +212,18 @@ class Model:
                         sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
                         self.ensamble = LogisticRegression(max_iter=10000)
                         self.ensamble.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights[::-1])
+
+                        self.coef_list.append({
+                            'index': i,
+                            'date': str(date),
+                            'coefs': self.ensamble.coef_.tolist(),
+                            'intercept': self.ensamble.intercept_.tolist(),
+                            'sum_weight': sample_weights.sum(),
+                            'len': len(self.past_pred)
+                        })
+
+                        with open('src/meta_model/coef_list.json', 'w') as json_file:
+                            json.dump(self.coef_list, json_file, indent=2)
 
                     self.bet_metrics['opps'] += 1
 
