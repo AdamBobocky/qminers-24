@@ -59,7 +59,7 @@ class GradientDescent:
     def _fit(self, max_epochs=30):
         weights = self._get_time_weights()
         idx_start = torch.nonzero(weights > 0.004, as_tuple=True)[0][0].item()
-        optimizer = optim.Adam([self.team_mus, self.sigma, self.home_advantage], lr=0.04)
+        optimizer = optim.Adam([self.team_mus, self.sigma, self.home_advantage], lr=0.02)
 
         for epoch in range(max_epochs):
             optimizer.zero_grad()

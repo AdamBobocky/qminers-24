@@ -30,7 +30,7 @@ class Model:
             GradientDescent(),  # 0.8539410540350695
             Exhaustion(),       # -0.30556362733411674
             nate_silver_elo,    # 0.002608191859624124
-            # NeuralNetwork(nate_silver_elo)
+            NeuralNetwork(nate_silver_elo)
         ]
         # End
 
@@ -130,23 +130,23 @@ class Model:
         home_win = current['H']
         year = int(str(current['Date'])[0:4])
 
-        # if year >= 1994:
-        input_arr = self._get_input_features(home_id, away_id, season, date)
+        if year >= 1996:
+            input_arr = self._get_input_features(home_id, away_id, season, date)
 
-        if input_arr is not None:
-            self.past_pred.append([*input_arr, home_win])
-            self.ensamble_retrain -= 1
+            if input_arr is not None:
+                self.past_pred.append([*input_arr, home_win])
+                self.ensamble_retrain -= 1
 
         self._handle_metrics(idx, current)
 
-        # if year >= 1986:
-        # Let the models create training frames before new data arrives
-        for model in self.model_list:
-            model.pre_add_game(current, current_players)
+        if year >= 1990:
+            # Let the models create training frames before new data arrives
+            for model in self.model_list:
+                model.pre_add_game(current, current_players)
 
-        # Add new data to the models
-        for model in self.model_list:
-            model.add_game(current, current_players)
+            # Add new data to the models
+            for model in self.model_list:
+                model.add_game(current, current_players)
 
     def _print_metrics(self):
         print('')
@@ -189,7 +189,8 @@ class Model:
 
         min_bet = summary.iloc[0]['Min_bet']
         max_bet = summary.iloc[0]['Max_bet']
-        my_bet = max(min_bet, min(max_bet * 0.3, summary.iloc[0]['Bankroll'] * 0.02))
+        bankroll = summary.iloc[0]['Bankroll']
+        my_bet = max(min_bet, min(max_bet * 0.3, bankroll * 0.02))
 
         bets = pd.DataFrame(data=np.zeros((len(opps), 2)), columns=['BetH', 'BetA'], index=opps.index)
 
@@ -207,7 +208,7 @@ class Model:
 
                 if input_arr is not None:
                     if self.ensamble_retrain <= 0:
-                        self.ensamble_retrain = 300
+                        self.ensamble_retrain = 400
                         np_array = np.array(self.past_pred)
                         sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
                         self.ensamble = LogisticRegression(max_iter=10000)
@@ -234,13 +235,14 @@ class Model:
                     self.coef_map[i] = [self.ensamble.intercept_.tolist(), *self.ensamble.coef_.tolist()]
 
                     # Adjust for playoffs
-                    adj_pred = pred # sigmoid((inverse_sigmoid(pred) + 0.2) * 1.1) if playoff else pred
+                    # adj_pred = pred # sigmoid((inverse_sigmoid(pred) + 0.2) * 1.1) if playoff else pred
+                    adj_pred = sigmoid((inverse_sigmoid(pred) + 0.1) * 1.05) if playoff else pred
 
                     odds_home = current['OddsH']
                     odds_away = current['OddsA']
 
-                    min_home_odds = (1 / adj_pred - 1) * 1.06 + 1 + 0.03
-                    min_away_odds = (1 / (1 - adj_pred) - 1) * 1.06 + 1 + 0.03
+                    min_home_odds = (1 / adj_pred + 0.025) if bankroll > 4000 else ((1 / adj_pred - 1) * 1.1 + 1.04)
+                    min_away_odds = (1 / (1 - adj_pred) + 0.025) if bankroll > 4000 else ((1 / (1 - adj_pred) - 1) * 1.1 + 1.04)
 
                     if odds_home >= min_home_odds:
                         bets.at[i, 'BetH'] = my_bet

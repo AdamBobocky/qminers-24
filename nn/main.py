@@ -71,7 +71,7 @@ def train(model, dataloader, optimizer, loss_fn, device):
         loss = loss_fn(predicted_score_diff, true_score_diff)
 
         batch_size = true_score_diff.size(0)
-        weights = torch.tensor([0.99984 ** (len(dataloader.dataset) - (batch_idx * batch_size + i))
+        weights = torch.tensor([0.9999 ** (len(dataloader.dataset) - (batch_idx * batch_size + i))
                                 for i in range(batch_size)], dtype=torch.float32)
         weights = weights.to(loss.device)
         weighted_loss = (loss * weights).mean()  # Apply weights to loss
@@ -147,10 +147,15 @@ split_index = int(0.85 * len(home_team_stats))
 # Training loop
 num_epochs = 40
 
-train_data = TensorDataset(home_team_stats[:split_index], away_team_stats[:split_index],
-                        home_game_weights[:split_index], away_game_weights[:split_index],
-                        home_play_times[:split_index], away_play_times[:split_index],
-                        true_score_diff[:split_index])
+# train_data = TensorDataset(home_team_stats[:split_index], away_team_stats[:split_index],
+#                         home_game_weights[:split_index], away_game_weights[:split_index],
+#                         home_play_times[:split_index], away_play_times[:split_index],
+#                         true_score_diff[:split_index])
+
+train_data = TensorDataset(home_team_stats, away_team_stats,
+                        home_game_weights, away_game_weights,
+                        home_play_times, away_play_times,
+                        true_score_diff)
 val_data = TensorDataset(home_team_stats[split_index:], away_team_stats[split_index:],
                         home_game_weights[split_index:], away_game_weights[split_index:],
                         home_play_times[split_index:], away_play_times[split_index:],
@@ -162,7 +167,7 @@ for epoch in range(num_epochs):
     train_loss, train_accuracy = train(model, train_loader, optimizer, loss_fn, device)
     # val_loss, val_accuracy, val_predictions = validate(model, val_loader, loss_fn, device)
     val_loss, val_accuracy = validate(model, val_loader, loss_fn, device)
-    print(f'Epoch {epoch+1} / {num_epochs}, train_loss: {train_loss:.4f}, train_accuracy: {train_accuracy:.4f}, val_loss: {val_loss:.4f}, val_accuracy: {val_accuracy:.4f}')
+    print(f'Epoch {epoch + 1} / {num_epochs}, train_loss: {train_loss:.4f}, train_accuracy: {train_accuracy:.4f}, val_loss: {val_loss:.4f}, val_accuracy: {val_accuracy:.4f}')
 
 # validation_results = {key: float(pred) for key, pred in zip(keys[split_index:], val_predictions)}
 
@@ -173,5 +178,5 @@ state_dict = model.state_dict()
 state_dict_json = {k: v.tolist() for k, v in state_dict.items()}  # Convert tensors to lists
 
 # Save to a JSON file
-with open("pretrained_model.json", "w") as f:
+with open('pretrained_model.json', 'w') as f:
     json.dump(state_dict_json, f, indent=2)
