@@ -11,6 +11,7 @@ games_df = pd.read_csv('data/games.csv')
 
 keys = []
 player_data = defaultdict(list)
+player_teams = defaultdict(int)
 team_rosters = {}
 
 home_inputs = []
@@ -150,7 +151,7 @@ for index, current in games_df.iterrows():
                     c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
                 while len(c_player_data) < 40:
-                    c_player_data.append([0] * (INPUTS_DIM + 1))
+                    c_player_data.append([0] * (INPUTS_DIM + 2))
 
                 c_home_inputs.append(c_player_data)
                 c_home_playtimes.append(mins / home_total_mins)
@@ -167,7 +168,7 @@ for index, current in games_df.iterrows():
                     c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
                 while len(c_player_data) < 40:
-                    c_player_data.append([0] * (INPUTS_DIM + 1))
+                    c_player_data.append([0] * (INPUTS_DIM + 2))
 
                 c_away_inputs.append(c_player_data)
                 c_away_playtimes.append(mins / away_total_mins)
@@ -181,6 +182,13 @@ for index, current in games_df.iterrows():
 
     # Log data
     game_players = players_df[(players_df['Game'] == index) & (players_df['MIN'] >= 3)]
+
+    players_on_a_team_map = {}
+
+    for _, player in game_players.iterrows():
+        key = f"{player['Player']}|{player['Team']}"
+        players_on_a_team_map[player['Player']] = math.log(1 + player_teams[key])
+        player_teams[key] += 1
 
     home_players = game_players[game_players['Team'] == current['HID']]
     away_players = game_players[game_players['Team'] == current['AID']]
@@ -210,7 +218,7 @@ for index, current in games_df.iterrows():
 
     for data in [*mapped_home_players, *mapped_away_players]:
         if not any(math.isnan(x) for x in data['inputs']):
-            player_data[data['pid']].append([[date, data['mins']], *data['inputs']])
+            player_data[data['pid']].append([[date, data['mins']], *data['inputs'], players_on_a_team_map[data['pid']]])
 
     elo.add_game(current)
 

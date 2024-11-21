@@ -190,6 +190,7 @@ class Model:
         min_bet = summary.iloc[0]['Min_bet']
         max_bet = summary.iloc[0]['Max_bet']
         bankroll = summary.iloc[0]['Bankroll']
+        my_bet = max(min_bet, min(max_bet, summary.iloc[0]['Bankroll'] * 0.08))
 
         bets = pd.DataFrame(data=np.zeros((len(opps), 2)), columns=['BetH', 'BetA'], index=opps.index)
 
@@ -235,16 +236,15 @@ class Model:
 
                     # Adjust for playoffs
                     # adj_pred = pred # sigmoid((inverse_sigmoid(pred) + 0.2) * 1.1) if playoff else pred
-                    adj_pred = sigmoid((inverse_sigmoid(pred) + 0.1) * 1.05) if playoff else pred
+                    adj_pred = sigmoid((inverse_sigmoid(pred) + 0.1) * 1.05) if playoff else sigmoid(inverse_sigmoid(pred) * 1.03)
 
                     odds_home = current['OddsH']
                     odds_away = current['OddsA']
 
-                    min_home_odds = (1 / adj_pred + 0.02) if bankroll > 5000 else ((1 / adj_pred - 1) * 1.1 + 1.04)
-                    min_away_odds = (1 / (1 - adj_pred) + 0.02) if bankroll > 5000 else ((1 / (1 - adj_pred) - 1) * 1.1 + 1.04)
+                    min_home_odds = (1 / adj_pred + 0.02) if bankroll > 4000 else ((1 / adj_pred - 1) * 1.1 + 1.04)
+                    min_away_odds = (1 / (1 - adj_pred) + 0.02) if bankroll > 4000 else ((1 / (1 - adj_pred) - 1) * 1.1 + 1.04)
 
                     if odds_home >= min_home_odds:
-                        my_bet = max(min_bet, min(max_bet, adj_pred - ((1 - adj_pred) / (odds_home - 1)) * bankroll * 0.35))
                         bets.at[i, 'BetH'] = my_bet
 
                         self.bet_metrics['exp_pnl'] += adj_pred * odds_home - 1
@@ -253,7 +253,6 @@ class Model:
                         self.bet_metrics['sum_odds'] += odds_home
 
                     if odds_away >= min_away_odds:
-                        my_bet = max(min_bet, min(max_bet, (1 - adj_pred) - (adj_pred / (odds_away - 1)) * bankroll * 0.35))
                         bets.at[i, 'BetA'] = my_bet
 
                         self.bet_metrics['exp_pnl'] += (1 - adj_pred) * odds_away - 1

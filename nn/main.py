@@ -13,11 +13,11 @@ class PlayerRatingModel(nn.Module):
         super(PlayerRatingModel, self).__init__()
 
         self.layers = nn.Sequential(
-            nn.Linear(19, 12),
+            nn.Linear(20, 16),
             nn.ReLU(),
-            nn.Linear(12, 6),
+            nn.Linear(16, 12),
             nn.ReLU(),
-            nn.Linear(6, 4),
+            nn.Linear(12, 4),
             nn.ReLU()
         )
 
@@ -145,7 +145,7 @@ true_score_diff = torch.tensor(np_true_score_diff, dtype=torch.float32)
 split_index = int(0.85 * len(home_team_stats))
 
 # Training loop
-num_epochs = 40
+num_epochs = 100
 
 # train_data = TensorDataset(home_team_stats[:split_index], away_team_stats[:split_index],
 #                         home_game_weights[:split_index], away_game_weights[:split_index],
