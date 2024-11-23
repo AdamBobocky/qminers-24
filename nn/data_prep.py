@@ -104,121 +104,123 @@ for index, current in games_df.iterrows():
     away_score = current['ASC']
     date = datetime.strptime(current['Date'], '%Y-%m-%d')
 
-    # Make prediction
-    if season in team_rosters and home_id in team_rosters[season] and away_id in team_rosters[season] and len(team_rosters[season][home_id]) >= 5 and len(team_rosters[season][away_id]) >= 5:
-        home_rosters = team_rosters[season][home_id][-5:]
-        away_rosters = team_rosters[season][away_id][-5:]
+    # if index > 10000:
+    if index > 5000:
+        # Make prediction
+        if season in team_rosters and home_id in team_rosters[season] and away_id in team_rosters[season] and len(team_rosters[season][home_id]) >= 5 and len(team_rosters[season][away_id]) >= 5:
+            home_rosters = team_rosters[season][home_id][-5:]
+            away_rosters = team_rosters[season][away_id][-5:]
 
-        home_roster = defaultdict(int)
-        away_roster = defaultdict(int)
+            home_roster = defaultdict(int)
+            away_roster = defaultdict(int)
 
-        for roster in home_rosters:
-            for pid, mins in roster:
-                home_roster[pid] += mins
+            for roster in home_rosters:
+                for pid, mins in roster:
+                    home_roster[pid] += mins
 
-        for roster in away_rosters:
-            for pid, mins in roster:
-                away_roster[pid] += mins
+            for roster in away_rosters:
+                for pid, mins in roster:
+                    away_roster[pid] += mins
 
-        home_roster = sorted(home_roster.items(), key=lambda x: x[1], reverse=True)[:12]
-        away_roster = sorted(away_roster.items(), key=lambda x: x[1], reverse=True)[:12]
+            home_roster = sorted(home_roster.items(), key=lambda x: x[1], reverse=True)[:12]
+            away_roster = sorted(away_roster.items(), key=lambda x: x[1], reverse=True)[:12]
 
-        while len(home_roster) < 12:
-            home_roster.append([-1, 0])
-        while len(away_roster) < 12:
-            away_roster.append([-1, 0])
+            while len(home_roster) < 12:
+                home_roster.append([-1, 0])
+            while len(away_roster) < 12:
+                away_roster.append([-1, 0])
 
-        home_total_mins = sum(x[1] for x in home_roster)
-        away_total_mins = sum(x[1] for x in away_roster)
+            home_total_mins = sum(x[1] for x in home_roster)
+            away_total_mins = sum(x[1] for x in away_roster)
 
-        # home_roster and away_roster both are of length 12, contain the players who play the most
+            # home_roster and away_roster both are of length 12, contain the players who play the most
 
-        if home_total_mins >= 500 and away_total_mins >= 500:
-            c_home_inputs = []
-            c_home_playtimes = []
-            c_away_inputs = []
-            c_away_playtimes = []
+            if home_total_mins >= 500 and away_total_mins >= 500:
+                c_home_inputs = []
+                c_home_playtimes = []
+                c_away_inputs = []
+                c_away_playtimes = []
 
-            for pid, mins in home_roster:
-                c_player_data = []
+                for pid, mins in home_roster:
+                    c_player_data = []
 
-                if pid != -1 and pid in player_data:
-                    c_player_data = copy.deepcopy(player_data[pid][-40:])
+                    if pid != -1 and pid in player_data:
+                        c_player_data = copy.deepcopy(player_data[pid][-40:])
 
-                for i in range(len(c_player_data)):
-                    point_date, point_mins = c_player_data[i][0]
-                    time_weight = 0.9965 ** abs((date - point_date).days)
-                    c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
+                    for i in range(len(c_player_data)):
+                        point_date, point_mins = c_player_data[i][0]
+                        time_weight = 0.9965 ** abs((date - point_date).days)
+                        c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
-                while len(c_player_data) < 40:
-                    c_player_data.append([0] * (INPUTS_DIM + 2))
+                    while len(c_player_data) < 40:
+                        c_player_data.append([0] * (INPUTS_DIM + 2))
 
-                c_home_inputs.append(c_player_data)
-                c_home_playtimes.append(mins / home_total_mins)
+                    c_home_inputs.append(c_player_data)
+                    c_home_playtimes.append(mins / home_total_mins)
 
-            for pid, mins in away_roster:
-                c_player_data = []
+                for pid, mins in away_roster:
+                    c_player_data = []
 
-                if pid != -1 and pid in player_data:
-                    c_player_data = copy.deepcopy(player_data[pid][-40:])
+                    if pid != -1 and pid in player_data:
+                        c_player_data = copy.deepcopy(player_data[pid][-40:])
 
-                for i in range(len(c_player_data)):
-                    point_date, point_mins = c_player_data[i][0]
-                    time_weight = 0.9965 ** abs((date - point_date).days)
-                    c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
+                    for i in range(len(c_player_data)):
+                        point_date, point_mins = c_player_data[i][0]
+                        time_weight = 0.9965 ** abs((date - point_date).days)
+                        c_player_data[i][0] = round(point_mins * time_weight, 3) # Apply time decay
 
-                while len(c_player_data) < 40:
-                    c_player_data.append([0] * (INPUTS_DIM + 2))
+                    while len(c_player_data) < 40:
+                        c_player_data.append([0] * (INPUTS_DIM + 2))
 
-                c_away_inputs.append(c_player_data)
-                c_away_playtimes.append(mins / away_total_mins)
+                    c_away_inputs.append(c_player_data)
+                    c_away_playtimes.append(mins / away_total_mins)
 
-            keys.append(index)
-            home_inputs.append(c_home_inputs)
-            home_playtimes.append(c_home_playtimes)
-            away_inputs.append(c_away_inputs)
-            away_playtimes.append(c_away_playtimes)
-            outputs.append((abs(home_score - away_score) + 3) ** 0.7 * (1 if home_score > away_score else -1))
+                keys.append(index)
+                home_inputs.append(c_home_inputs)
+                home_playtimes.append(c_home_playtimes)
+                away_inputs.append(c_away_inputs)
+                away_playtimes.append(c_away_playtimes)
+                outputs.append((abs(home_score - away_score) + 3) ** 0.7 * (1 if home_score > away_score else -1))
 
-    # Log data
-    game_players = players_df[(players_df['Game'] == index) & (players_df['MIN'] >= 3)]
+        # Log data
+        game_players = players_df[(players_df['Game'] == index) & (players_df['MIN'] >= 3)]
 
-    players_on_a_team_map = {}
+        players_on_a_team_map = {}
 
-    for _, player in game_players.iterrows():
-        key = f"{player['Player']}|{player['Team']}"
-        players_on_a_team_map[player['Player']] = math.log(1 + player_teams[key])
-        player_teams[key] += 1
+        for _, player in game_players.iterrows():
+            key = f"{player['Player']}|{player['Team']}"
+            players_on_a_team_map[player['Player']] = math.log(1 + player_teams[key])
+            player_teams[key] += 1
 
-    home_players = game_players[game_players['Team'] == current['HID']]
-    away_players = game_players[game_players['Team'] == current['AID']]
+        home_players = game_players[game_players['Team'] == current['HID']]
+        away_players = game_players[game_players['Team'] == current['AID']]
 
-    if season not in team_rosters:
-        team_rosters[season] = {}
+        if season not in team_rosters:
+            team_rosters[season] = {}
 
-    if home_id not in team_rosters[season]:
-        team_rosters[season][home_id] = []
+        if home_id not in team_rosters[season]:
+            team_rosters[season][home_id] = []
 
-    if away_id not in team_rosters[season]:
-        team_rosters[season][away_id] = []
+        if away_id not in team_rosters[season]:
+            team_rosters[season][away_id] = []
 
-    team_rosters[season][home_id].append([[x['Player'], x['MIN']] for _, x in home_players.iterrows()])
-    team_rosters[season][away_id].append([[x['Player'], x['MIN']] for _, x in away_players.iterrows()])
+        team_rosters[season][home_id].append([[x['Player'], x['MIN']] for _, x in home_players.iterrows()])
+        team_rosters[season][away_id].append([[x['Player'], x['MIN']] for _, x in away_players.iterrows()])
 
-    mapped_home_players = [{
-        'pid': row['Player'],
-        'mins': row['MIN'],
-        'inputs': row_to_inputs(row, True, home_id, away_id, season)
-    } for _, row in home_players.iterrows()]
-    mapped_away_players = [{
-        'pid': row['Player'],
-        'mins': row['MIN'],
-        'inputs': row_to_inputs(row, False, away_id, home_id, season)
-    } for _, row in away_players.iterrows()]
+        mapped_home_players = [{
+            'pid': row['Player'],
+            'mins': row['MIN'],
+            'inputs': row_to_inputs(row, True, home_id, away_id, season)
+        } for _, row in home_players.iterrows()]
+        mapped_away_players = [{
+            'pid': row['Player'],
+            'mins': row['MIN'],
+            'inputs': row_to_inputs(row, False, away_id, home_id, season)
+        } for _, row in away_players.iterrows()]
 
-    for data in [*mapped_home_players, *mapped_away_players]:
-        if not any(math.isnan(x) for x in data['inputs']):
-            player_data[data['pid']].append([[date, data['mins']], *data['inputs'], players_on_a_team_map[data['pid']]])
+        for data in [*mapped_home_players, *mapped_away_players]:
+            if not any(math.isnan(x) for x in data['inputs']):
+                player_data[data['pid']].append([[date, data['mins']], *data['inputs'], players_on_a_team_map[data['pid']]])
 
     elo.add_game(current)
 

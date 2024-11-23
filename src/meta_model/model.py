@@ -66,10 +66,12 @@ class Model:
     def _get_input_features(self, home_id, away_id, season, date):
         input_data = []
 
-        for model in self.model_list:
+        for model_i, model in enumerate(self.model_list):
             data = model.get_input_data(home_id, away_id, season, date)
 
             if data is None:
+                print('\nmodel_i:', model_i)
+
                 return None
 
             input_data = [
@@ -195,6 +197,8 @@ class Model:
                 if done % 100 == 0:
                     print(f'{done} / {total}')
 
+            print('\n', len(self.past_pred))
+
             for i in opps.index:
                 current = opps.loc[i]
 
@@ -208,7 +212,9 @@ class Model:
                 if len(self.past_pred) >= self.ensamble_required_n:
                     input_arr = self._get_input_features(home_id, away_id, season, date)
 
+                    print('\nPre')
                     if input_arr is not None:
+                        print('\nReal')
                         if self.ensamble_retrain <= 0:
                             self.ensamble_retrain = 400
                             np_array = np.array(self.past_pred)
@@ -249,6 +255,7 @@ class Model:
                             c_pred = adj_pred
                             c_inv_pred = 1 - adj_pred
                             intended_bet = (c_pred - c_inv_pred / (odds_home - 1)) * 0.9 * bankroll - math.round(days_until) * max_bet
+                            print('\nintended_bet', intended_bet, 'bankroll', bankroll, 'days_until', days_until)
 
                             if intended_bet > 0:
                                 my_bet = max(min_bet, min(max_bet, intended_bet))
@@ -265,6 +272,7 @@ class Model:
                             c_pred = 1 - adj_pred
                             c_inv_pred = adj_pred
                             intended_bet = (c_pred - c_inv_pred / (odds_away - 1)) * 0.9 * bankroll - math.round(days_until) * max_bet
+                            print('\nintended_bet', intended_bet, 'bankroll', bankroll, 'days_until', days_until)
 
                             if intended_bet > 0:
                                 my_bet = max(min_bet, min(max_bet, intended_bet))
