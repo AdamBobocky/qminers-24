@@ -1653,13 +1653,6 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 
-from pythagorean.model import Pythagorean
-from four_factor.model import FourFactor
-from nate_silver_elo.model import NateSilverElo
-from gradient_descent.model import GradientDescent
-from exhaustion.model import Exhaustion
-from neural_network.model import NeuralNetwork
-
 def inverse_sigmoid(x):
     return math.log(x / (1 - x))
 
