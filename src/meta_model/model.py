@@ -130,7 +130,7 @@ class Model:
         home_win = current['H']
         year = int(str(current['Date'])[0:4])
 
-        if year >= 1996:
+        if year >= 2002:
             input_arr = self._get_input_features(home_id, away_id, season, date)
 
             if input_arr is not None:
@@ -139,7 +139,7 @@ class Model:
 
         self._handle_metrics(idx, current)
 
-        if year >= 1990:
+        if year >= 2000:
             # Let the models create training frames before new data arrives
             for model in self.model_list:
                 model.pre_add_game(current, current_players)
@@ -167,97 +167,116 @@ class Model:
             print('corr r2  ', r_squared)
 
     def place_bets(self, summary: pd.DataFrame, opps: pd.DataFrame, inc: tuple[pd.DataFrame, pd.DataFrame]):
-        games_increment, players_increment = inc
+        bets = pd.DataFrame(data=np.zeros((len(opps), 2)), columns=['BetH', 'BetA'], index=opps.index)
 
-        if self.debug_mode:
-            self._print_metrics()
-
-            with open('src/meta_model/data.json', 'w') as json_file:
-                json.dump(self.pred_list, json_file, indent=2)
-
-        done = 0
-        total = len(games_increment)
-
-        for idx in games_increment.index:
-            current = games_increment.loc[idx]
-            current_players = players_increment[(players_increment['Game'] == idx) & (players_increment['MIN'] >= 3)]
-
-            self._game_increment(idx, current, current_players)
-            done += 1
-            if done % 100 == 0:
-                print(f'{done} / {total}')
-
+        summ_date = summary.iloc[0]['Date']
         min_bet = summary.iloc[0]['Min_bet']
         max_bet = summary.iloc[0]['Max_bet']
         bankroll = summary.iloc[0]['Bankroll']
-        my_bet = max(min_bet, min(max_bet, summary.iloc[0]['Bankroll'] * 0.08))
 
-        bets = pd.DataFrame(data=np.zeros((len(opps), 2)), columns=['BetH', 'BetA'], index=opps.index)
+        try:
+            games_increment, players_increment = inc
 
-        for i in opps.index:
-            current = opps.loc[i]
+            if self.debug_mode:
+                self._print_metrics()
 
-            season = current['Season']
-            date = current['Date']
-            home_id = current['HID']
-            away_id = current['AID']
-            playoff = current['POFF'] == 1
+                with open('src/meta_model/data.json', 'w') as json_file:
+                    json.dump(self.pred_list, json_file, indent=2)
 
-            if len(self.past_pred) >= self.ensamble_required_n:
-                input_arr = self._get_input_features(home_id, away_id, season, date)
+            done = 0
+            total = len(games_increment)
 
-                if input_arr is not None:
-                    if self.ensamble_retrain <= 0:
-                        self.ensamble_retrain = 400
-                        np_array = np.array(self.past_pred)
-                        sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
-                        self.ensamble = LogisticRegression(max_iter=10000)
-                        self.ensamble.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights[::-1])
+            for idx in games_increment.index:
+                current = games_increment.loc[idx]
+                current_players = players_increment[(players_increment['Game'] == idx) & (players_increment['MIN'] >= 3)]
 
-                        self.coef_list.append({
-                            'index': i,
-                            'date': str(date),
-                            'coefs': self.ensamble.coef_.tolist(),
-                            'intercept': self.ensamble.intercept_.tolist(),
-                            'sum_weight': sample_weights.sum(),
-                            'len': len(self.past_pred)
-                        })
+                self._game_increment(idx, current, current_players)
+                done += 1
+                if done % 100 == 0:
+                    print(f'{done} / {total}')
 
-                        with open('src/meta_model/coef_list.json', 'w') as json_file:
-                            json.dump(self.coef_list, json_file, indent=2)
+            for i in opps.index:
+                current = opps.loc[i]
 
-                    self.bet_metrics['opps'] += 1
+                season = current['Season']
+                date = current['Date']
+                home_id = current['HID']
+                away_id = current['AID']
+                playoff = current['POFF'] == 1
+                days_until = (date - summ_date).days
 
-                    pred = self.ensamble.predict_proba(np.array([input_arr]))[0, 1]
+                if len(self.past_pred) >= self.ensamble_required_n:
+                    input_arr = self._get_input_features(home_id, away_id, season, date)
 
-                    self.prediction_map[i] = pred
-                    self.input_map[i] = input_arr
-                    self.coef_map[i] = [self.ensamble.intercept_.tolist(), *self.ensamble.coef_.tolist()]
+                    if input_arr is not None:
+                        if self.ensamble_retrain <= 0:
+                            self.ensamble_retrain = 400
+                            np_array = np.array(self.past_pred)
+                            sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
+                            self.ensamble = LogisticRegression(max_iter=10000)
+                            self.ensamble.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights[::-1])
 
-                    # Adjust for playoffs
-                    # adj_pred = pred # sigmoid((inverse_sigmoid(pred) + 0.2) * 1.1) if playoff else pred
-                    adj_pred = sigmoid((inverse_sigmoid(pred) + 0.1) * 1.05) if playoff else sigmoid(inverse_sigmoid(pred) * 1.03)
+                            self.coef_list.append({
+                                'index': i,
+                                'date': str(date),
+                                'coefs': self.ensamble.coef_.tolist(),
+                                'intercept': self.ensamble.intercept_.tolist(),
+                                'sum_weight': sample_weights.sum(),
+                                'len': len(self.past_pred)
+                            })
 
-                    odds_home = current['OddsH']
-                    odds_away = current['OddsA']
+                            with open('src/meta_model/coef_list.json', 'w') as json_file:
+                                json.dump(self.coef_list, json_file, indent=2)
 
-                    min_home_odds = (1 / adj_pred + 0.02) if bankroll > 4000 else ((1 / adj_pred - 1) * 1.1 + 1.04)
-                    min_away_odds = (1 / (1 - adj_pred) + 0.02) if bankroll > 4000 else ((1 / (1 - adj_pred) - 1) * 1.1 + 1.04)
+                        self.bet_metrics['opps'] += 1
 
-                    if odds_home >= min_home_odds:
-                        bets.at[i, 'BetH'] = my_bet
+                        pred = self.ensamble.predict_proba(np.array([input_arr]))[0, 1]
 
-                        self.bet_metrics['exp_pnl'] += adj_pred * odds_home - 1
-                        self.bet_metrics['volume'] += my_bet
-                        self.bet_metrics['count'] += 1
-                        self.bet_metrics['sum_odds'] += odds_home
+                        self.prediction_map[i] = pred
+                        self.input_map[i] = input_arr
+                        self.coef_map[i] = [self.ensamble.intercept_.tolist(), *self.ensamble.coef_.tolist()]
 
-                    if odds_away >= min_away_odds:
-                        bets.at[i, 'BetA'] = my_bet
+                        # Adjust for playoffs
+                        adj_pred = sigmoid((inverse_sigmoid(pred) + 0.1) * 1.05) if playoff else pred
 
-                        self.bet_metrics['exp_pnl'] += (1 - adj_pred) * odds_away - 1
-                        self.bet_metrics['volume'] += my_bet
-                        self.bet_metrics['count'] += 1
-                        self.bet_metrics['sum_odds'] += odds_away
+                        odds_home = current['OddsH']
+                        odds_away = current['OddsA']
+
+                        min_home_odds = (1 / adj_pred * 1.02) if bankroll > 4000 else ((1 / adj_pred - 1) * 1.1 + 1.04)
+                        min_away_odds = (1 / (1 - adj_pred) * 1.02) if bankroll > 4000 else ((1 / (1 - adj_pred) - 1) * 1.1 + 1.04)
+
+                        if odds_home >= min_home_odds:
+                            c_pred = adj_pred
+                            c_inv_pred = 1 - adj_pred
+                            intended_bet = (c_pred - c_inv_pred / (odds_home - 1)) * 0.9 * bankroll - math.round(days_until) * max_bet
+
+                            if intended_bet > 0:
+                                my_bet = max(min_bet, min(max_bet, intended_bet))
+
+                                bets.at[i, 'BetH'] = my_bet
+                                bankroll =- my_bet
+
+                                self.bet_metrics['exp_pnl'] += adj_pred * odds_home - 1
+                                self.bet_metrics['volume'] += my_bet
+                                self.bet_metrics['count'] += 1
+                                self.bet_metrics['sum_odds'] += odds_home
+
+                        if odds_away >= min_away_odds:
+                            c_pred = 1 - adj_pred
+                            c_inv_pred = adj_pred
+                            intended_bet = (c_pred - c_inv_pred / (odds_away - 1)) * 0.9 * bankroll - math.round(days_until) * max_bet
+
+                            if intended_bet > 0:
+                                my_bet = max(min_bet, min(max_bet, intended_bet))
+                                bets.at[i, 'BetA'] = my_bet
+                                bankroll =- my_bet
+
+                                self.bet_metrics['exp_pnl'] += (1 - adj_pred) * odds_away - 1
+                                self.bet_metrics['volume'] += my_bet
+                                self.bet_metrics['count'] += 1
+                                self.bet_metrics['sum_odds'] += odds_away
+
+        except Exception:
+            pass
 
         return bets

@@ -11,7 +11,7 @@ from sklearn.linear_model import LogisticRegression
 from collections import defaultdict
 
 class GradientDescent:
-    def __init__(self, num_teams=30, monthly_decay=0.8, long_term_decay=0.97):
+    def __init__(self, num_teams=50, monthly_decay=0.8, long_term_decay=0.97):
         self.num_teams = num_teams
         self.monthly_decay = monthly_decay
         self.long_term_decay = long_term_decay
@@ -72,7 +72,7 @@ class GradientDescent:
                      - 0.5 * torch.log(torch.tensor(2 * np.pi)))
         return torch.sum(log_value * weights[idx_start:])
 
-    def _fit(self, max_epochs=30):
+    def _fit(self, max_epochs=24):
         weights = self._get_time_weights()
         long_term_weights = self._get_long_term_weights()
         idx_start = torch.nonzero(weights > 0.004, as_tuple=True)[0][0].item()
@@ -141,6 +141,3 @@ class GradientDescent:
         )
 
         return [game_exp.item() / game_sigma.item()]
-
-# Top is new
-# Bottom is OG
