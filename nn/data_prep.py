@@ -6,8 +6,8 @@ import copy
 from collections import defaultdict
 from datetime import datetime
 
-players_df = pd.read_csv('data-merge-round2/players.csv')
-games_df = pd.read_csv('data-merge-round2/games.csv')
+players_df = pd.read_csv('data/players.csv')
+games_df = pd.read_csv('data/games.csv')
 
 keys = []
 player_data = defaultdict(list)
