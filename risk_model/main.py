@@ -105,10 +105,6 @@ def grid_search_optimize(data, bounds=(0.5, 1.2), steps=10):
     max_log_profit = -np.inf
     for multiplier in np.linspace(bounds[0], bounds[1], steps):
         log_profit = simulate_tournament(data, multiplier)
-        # if log_profit > max_log_profit:
-        #     max_log_profit = log_profit
-        #     best_multiplier = multiplier
-    return best_multiplier, max_log_profit
 
 # Optimize Kelly fraction
 optimal_fraction, max_log_profit = grid_search_optimize(data)

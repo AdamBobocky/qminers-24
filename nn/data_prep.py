@@ -6,8 +6,8 @@ import copy
 from collections import defaultdict
 from datetime import datetime
 
-players_df = pd.read_csv('data/players.csv')
-games_df = pd.read_csv('data/games.csv')
+players_df = pd.read_csv('data-merge-round2/players.csv')
+games_df = pd.read_csv('data-merge-round2/games.csv')
 
 keys = []
 player_data = defaultdict(list)
@@ -104,8 +104,8 @@ for index, current in games_df.iterrows():
     away_score = current['ASC']
     date = datetime.strptime(current['Date'], '%Y-%m-%d')
 
-    # if index > 10000:
-    if index > 5000:
+    if index > 17500:
+    # if index > 5000:
         # Make prediction
         if season in team_rosters and home_id in team_rosters[season] and away_id in team_rosters[season] and len(team_rosters[season][home_id]) >= 5 and len(team_rosters[season][away_id]) >= 5:
             home_rosters = team_rosters[season][home_id][-5:]
