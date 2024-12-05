@@ -6,8 +6,8 @@ import copy
 from collections import defaultdict
 from datetime import datetime
 
-players_df = pd.read_csv('data/players.csv')
-games_df = pd.read_csv('data/games.csv')
+players_df = pd.read_csv('data/players-merged.csv')
+games_df = pd.read_csv('data/games-merged.csv')
 
 keys = []
 player_data = defaultdict(list)
@@ -96,6 +96,8 @@ def row_to_inputs(row, am_home, my_id, opponent_id, season):
         row['PTS']
     ]
 
+games_df['RealDate'] = pd.to_datetime(games_df['Date']) + pd.Timedelta(days=4011)
+
 for index, current in games_df.iterrows():
     season = current['Season']
     home_id = current['HID']
@@ -104,8 +106,8 @@ for index, current in games_df.iterrows():
     away_score = current['ASC']
     date = datetime.strptime(current['Date'], '%Y-%m-%d')
 
-    if index > 17500:
-    # if index > 5000:
+    # if index > 17500:
+    if index > 5000:
         # Make prediction
         if season in team_rosters and home_id in team_rosters[season] and away_id in team_rosters[season] and len(team_rosters[season][home_id]) >= 5 and len(team_rosters[season][away_id]) >= 5:
             home_rosters = team_rosters[season][home_id][-5:]
@@ -175,12 +177,13 @@ for index, current in games_df.iterrows():
                     c_away_inputs.append(c_player_data)
                     c_away_playtimes.append(mins / away_total_mins)
 
-                keys.append(index)
-                home_inputs.append(c_home_inputs)
-                home_playtimes.append(c_home_playtimes)
-                away_inputs.append(c_away_inputs)
-                away_playtimes.append(c_away_playtimes)
-                outputs.append((abs(home_score - away_score) + 3) ** 0.7 * (1 if home_score > away_score else -1))
+                if current['RealDate'] < pd.Timestamp('2015-10-27'):
+                    keys.append(index)
+                    home_inputs.append(c_home_inputs)
+                    home_playtimes.append(c_home_playtimes)
+                    away_inputs.append(c_away_inputs)
+                    away_playtimes.append(c_away_playtimes)
+                    outputs.append((abs(home_score - away_score) + 3) ** 0.7 * (1 if home_score > away_score else -1))
 
         # Log data
         game_players = players_df[(players_df['Game'] == index) & (players_df['MIN'] >= 3)]
