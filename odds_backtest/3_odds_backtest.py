@@ -2,7 +2,7 @@ import json
 from sklearn.metrics import r2_score
 
 # Load the data from the JSON files
-with open('src/meta_model/data.json', 'r') as file:
+with open('src/meta_model/outcome_data.json', 'r') as file:
     meta_model_data = json.load(file)
 
 with open('data/odds/odds_map.json', 'r') as file:

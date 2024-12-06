@@ -2,7 +2,7 @@ import json
 import math
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LinearRegression
 
 from pythagorean.model import Pythagorean
 from four_factor.model import FourFactor
@@ -130,13 +130,14 @@ class Model:
         home_id = current['HID']
         away_id = current['AID']
         home_win = current['H']
+        score_diff = current['HSC'] - current['ASC']
         year = int(str(current['Date'])[0:4])
 
         if year >= 2002:
             input_arr = self._get_input_features(home_id, away_id, season, date)
 
             if input_arr is not None:
-                self.past_pred.append([*input_arr, home_win])
+                self.past_pred.append([*input_arr, score_diff])
                 self.ensamble_retrain -= 1
 
         self._handle_metrics(idx, current)
@@ -197,8 +198,6 @@ class Model:
                 if done % 100 == 0:
                     print(f'{done} / {total}')
 
-            print('\n', len(self.past_pred))
-
             for i in opps.index:
                 current = opps.loc[i]
 
@@ -212,14 +211,12 @@ class Model:
                 if len(self.past_pred) >= self.ensamble_required_n:
                     input_arr = self._get_input_features(home_id, away_id, season, date)
 
-                    print('\nPre')
                     if input_arr is not None:
-                        print('\nReal')
                         if self.ensamble_retrain <= 0:
                             self.ensamble_retrain = 400
                             np_array = np.array(self.past_pred)
                             sample_weights = np.exp(-0.0003 * np.arange(len(self.past_pred)))
-                            self.ensamble = LogisticRegression(max_iter=10000)
+                            self.ensamble = LinearRegression()
                             self.ensamble.fit(np_array[:, :-1], np_array[:, -1], sample_weight=sample_weights[::-1])
 
                             self.coef_list.append({
@@ -236,53 +233,11 @@ class Model:
 
                         self.bet_metrics['opps'] += 1
 
-                        pred = self.ensamble.predict_proba(np.array([input_arr]))[0, 1]
+                        pred = self.ensamble.predict(np.array([input_arr]))[0]
 
                         self.prediction_map[i] = pred
                         self.input_map[i] = input_arr
                         self.coef_map[i] = [self.ensamble.intercept_.tolist(), *self.ensamble.coef_.tolist()]
-
-                        # Adjust for playoffs
-                        adj_pred = sigmoid((inverse_sigmoid(pred) + 0.1) * 1.05) if playoff else pred
-
-                        odds_home = current['OddsH']
-                        odds_away = current['OddsA']
-
-                        min_home_odds = (1 / adj_pred * 1.02) if bankroll > 4000 else ((1 / adj_pred - 1) * 1.1 + 1.04)
-                        min_away_odds = (1 / (1 - adj_pred) * 1.02) if bankroll > 4000 else ((1 / (1 - adj_pred) - 1) * 1.1 + 1.04)
-
-                        if odds_home >= min_home_odds:
-                            c_pred = adj_pred
-                            c_inv_pred = 1 - adj_pred
-                            intended_bet = (c_pred - c_inv_pred / (odds_home - 1)) * 0.9 * bankroll - math.round(days_until) * max_bet
-                            print('\nintended_bet', intended_bet, 'bankroll', bankroll, 'days_until', days_until)
-
-                            if intended_bet > 0:
-                                my_bet = max(min_bet, min(max_bet, intended_bet))
-
-                                bets.at[i, 'BetH'] = my_bet
-                                bankroll =- my_bet
-
-                                self.bet_metrics['exp_pnl'] += adj_pred * odds_home - 1
-                                self.bet_metrics['volume'] += my_bet
-                                self.bet_metrics['count'] += 1
-                                self.bet_metrics['sum_odds'] += odds_home
-
-                        if odds_away >= min_away_odds:
-                            c_pred = 1 - adj_pred
-                            c_inv_pred = adj_pred
-                            intended_bet = (c_pred - c_inv_pred / (odds_away - 1)) * 0.9 * bankroll - math.round(days_until) * max_bet
-                            print('\nintended_bet', intended_bet, 'bankroll', bankroll, 'days_until', days_until)
-
-                            if intended_bet > 0:
-                                my_bet = max(min_bet, min(max_bet, intended_bet))
-                                bets.at[i, 'BetA'] = my_bet
-                                bankroll =- my_bet
-
-                                self.bet_metrics['exp_pnl'] += (1 - adj_pred) * odds_away - 1
-                                self.bet_metrics['volume'] += my_bet
-                                self.bet_metrics['count'] += 1
-                                self.bet_metrics['sum_odds'] += odds_away
 
         except Exception:
             pass
