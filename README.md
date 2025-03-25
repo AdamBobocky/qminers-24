@@ -1,60 +1,84 @@
-# Qminers Quant Hackathon 2024
+# #1 Team - SHAQ & KOBE QMiners 2024 hackathon post-mortem
 
-Vítej na Qminers Quant Hackathonu!
+## Team members
 
-V tomto repozitáři najdeš vše potřebné k odladění tvého modelu, aby Tě odevzdávací systém ničím nepřekvapil.
+Adam Bobocky (https://www.linkedin.com/in/adam-bobocky-a4890b198/)
 
-Odevzdávací systém beží na webu [hyperion.felk.cvut.cz](http://hyperion.felk.cvut.cz/).
+Vojtěch Kolomazník (https://www.linkedin.com/in/vojtech-kolomaznik/)
 
-## Struktura repozitáře
-* `problem_info.md` obsahuje detailní [zadání](problem_info.md) úlohy včetně popisu dat, které doporučujeme důkladně pročíst než se pustíš do tvorby vlastního modelu.
-* `qqh-2024-env.yml` obsahuje stejné prostředí jaké používá odevzdávací systém.
-* `data/games.csv` a `data/players.csv` obsahují trénovací data.
-* `src/environment.py` obsahuje evaluační smyčku, která běží v odevzdávacím systému.
-* `src/evaluate.py` skript pro spuštění lokáního vyhodnocení tvého modelu na trénovacích datech.
-* `src/model.py` obsahuje ukázkový model s metodou `place_bets`.
+## Competition description
 
-## Runtime prostředí
+We have received an 35 years NBA team box score and player box score data along with made up odds from the organizers.
 
-Soubor `qqh-2024-env.yml` obsahuje balíčky, které budou dostupné při evaluaci. Vřele doporučujeme toto prostředí replikovat lokálně.
+Our goal was to output our betting decisions to maximize profit.
 
-1. Nainstaluj si nástroj miniconda: https://docs.anaconda.com/miniconda/
-2. Importuj environment: `conda env create -f qqh-2024-env.yml`
-3. Aktivuj enviroment: `conda activate qqh-2024` 
+## Post-mortem
 
-Vývojová prostředí (IDE) často umí s conda environmenty pracovat (například PyCharm či VS Code).
+### First stage
 
-Pro ověření funčnosti můžeš rovnou spustit evaluaci modelu, který sází náhodně: `python src/evaluate.py`
+After the competition started I laid out my plan to efficiently build a strong model.
 
-## Vlastní řešení
+In order I did:
+* literature review by searching relevant keywords on Google Scholar, Medium, past Kaggle competitions, Reddit posts to catch up on public knowledge of NBA modelling
+* reading up on data analytics literature around basketball, as I had 0 basketball knowledge before the competition
+* data exploration in `research/` to verify various theories I have developed
+* compiled a list of "factors" which we believe influence the outcome of a game (`FACTOR_IMPORTANCE.md`)
+* built a backtesting and ensambling framework to test out models (`src/meta_model/`)
 
-Třída, kterou budeš odevzdávat do odevzdávacího systému, se musí jmenovat `Model` a musí obsahovat implementaci metody `place_bets(self, summary: pd.DataFrame, opps: pd.DataFrame, inc: tuple[pd.DataFrame, pd.DataFrame])`. Ukázkový model náhodného sázkaře najdeš [zde](src/model.py).
+The idea for the prediction model was to maximize information entropy by having sub-models predict the score difference, and the meta_model be a logistic regression that ensembles them to predict the final binary outcome (home or away win).
 
-Bližší info najdeš v [zadání](problem_info.md).
+The final model was an ensemble of:
 
-**Je zákázáno:**
+* linear regression with l2 regularization of past score differences (this was the most informative sub-model)
+* custom player-level neural network model
+* Nate Silver NBA Elo model
+* basketball pythagorean model
+* basketball four factor model
+* custom exhaustion features
 
-- Používat k ladění modelů jakákoliv jiná než námi dodaná data.
-- Spolupracovat s jinými týmy.
-- Manipulovat s odevzdávacím systémem.
-- Jakkoliv dolovat data z odevzdávacího systému.
-- Spouštět vlastní procesy, komunikovat přes síť a vytvářet soubory v odevzdávacím systému mimo složku `/tmp`.
+We had an online system to submit our predictions on out of sample data, and had a limit of 20 submissions.
 
-Porušení pravidel bude vést k vyloučení ze soutěže. Všechna odeslaná řešení se ukládají a mohou být zpětně přezkoumána.
+I decided to not poke the bear, and thus artificially limit the profit of my model to 1/10th, so that other competitors don't try harder to beat us. Even then I managed to hold top3 placement throughout the competition, only revealing the true score the last few hours.
 
-## Evaluace
+![First stage scores](first_stage_scores.png)
 
-Evaluace v odevzdávacím systému probíhá na skrytých (validačních) datech. Trénovací data obsahují [zápasy](data/games.csv) a statistiky [jednotlivých hráčů](data/players.csv) ze sezón 1975/76-1998/99.
-Validační data obsahují zápasy ze sezón 1999/00-2004/05.
-V první iteraci [evaluační smyčky](src/environment.py#L68) obdržíš jako [inkrement](problem_info.md#dataframe-inkrement%C3%A1ln%C3%ADch-dat) všechna trénovací data.
+With a score of 77382, I solo managed to get profit equal to the rest of the competitors combined. (You start with 1000 points, so that is not part of your profit and the second place did not fulfill the competition participation requirements, so they could not attend).
 
-V odevzdávacím systému budeš mít k dispozici pouze 1 cpu (1 vlákno) a 5 GB RAM. Současně může běžet pouze jedna evaluce tvého řešení.
+### Second stage preparation
 
-Počet odevzdání je omezen, doporučujeme tedy kód pečlivě odladit na lokálním stroji.
+The second stage was in-person finals over a single Saturday, where we got new data increments and were supposed to make our predictions for new data. The scores were reset, and the time horizon shortened, thus introducing more variance to the competition.
 
-V případě neúspěšného doběhnutí tvého programu se odevzdávací sytém pokouší napovědět příčinu pádu.
+Trying to combat this I have developed `risk_model/` to make a simple simulation of how the final day could look like and what decisions to make to maximize win probability.
 
-- `RTE` = Runtime Error. Nejčastěji kód spadnul na vyjímku, jejíž jméno ti odevzdávací systém (po rozkliknutí testcasu) ukáže. 
-- `MLE` = Memory Limit Exceeded. Překročil jsi  pamětový limit. (Může být rozpoznáno jako RTE)
-- `TLE` = Time Limit Exceeded. Překročil jsi časový limit.
+It is a simple script that simulates the tournament format, using optuna to optimize kelly fraction to maximize the probability of winning the tournament.
 
+It assumes each of the 20 competitors attending the finals start with the same 1000 points, each has varying model quality and risk apetite, while assuming all the models are correlated to varying degrees, account for the "Quant" factor. (https://web.mit.edu/Alo/www/Papers/august07.pdf)
+
+### Finals day
+
+After building a strong model and determining our chosen optimal strategy, we have arrived at the finals.
+
+It was split into 3 rounds, where we instantly took lead in the first round, furthering it in the second round.
+
+Decyphering the scrambled dataset we have found out that the third round data is happening shortly after covid, and given our lead in the competition was large enough, I chose to halve the risked amount, so we don't potentially lose out on our first place lead if others models adjust better for that age. This was a minor mistake, as the model performed the best during this time, but we still maintained a dominant first place lead.
+
+![Second stage score evolution](score_evolution.png)
+
+![Second stage scores](final_scores.png)
+
+If I did not halve the risk amount, our final score would come out at around 143,000 which does not manage to beat all the other scores combined like I did in the first stage, but still best by far.
+
+### Conclusion
+
+The competition was very fun, including the interactive, meta-game elemenet of the first round where we theorized heavily about what models are the others using, seeing their RAM usage, runtime, and score. Working on improving the model and preparing for the finals. And the finals day itself was a blast, with the organizers providing a great environment, food, and drinks, and networking opportunities.
+
+Due to the rules, after winning first place we cannot participate in the future editions of the competition, and thus I am making my solution and post-mortem public to up the competition for the next years.
+
+
+## Footnotes
+
+The codebase is a mess, best code practices not followed. Well aware, it was a time-limited hackathon, it started out pretty and ended up like this by the ending time-crunch.
+
+Additionally, I have attempted to backtest my model on real life odds, and it seemed to be profitable, but I may have some bugs in my implementation, as this was post-competition and I did not spend much time on it.
+
+To not make this document too long I had to leave out most of the details, so if you are interested to discuss anything, ping me on LinkedIn.
