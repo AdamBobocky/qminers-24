@@ -1,11 +1,5 @@
 # #1 Team - SHAQ & KOBE QMiners 2024 hackathon post-mortem
 
-## Team members
-
-Adam Bobocky (https://www.linkedin.com/in/adam-bobocky-a4890b198/)
-
-Vojtěch Kolomazník (https://www.linkedin.com/in/vojtech-kolomaznik/)
-
 ## Competition description
 
 We have received an 35 years NBA team box score and player box score data along with made up odds from the organizers.
